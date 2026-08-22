@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Ledger — Sales &amp; Inventory</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ledger">
+<meta name="theme-color" content="#2D6A4F">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --paper:#F6F5F1;
+    --surface:#FFFFFF;
+    --ink:#1B1F1D;
+    --muted:#6B7268;
+    --accent:#2D6A4F;
+    --accent-soft:#DCEBE2;
+    --danger:#B3261E;
+    --danger-soft:#F8E3E1;
+    --divider:#DAD6C9;
+    --radius:14px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding-top:env(safe-area-inset-top);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  h1,h2,h3,.display{ font-family:'Space Grotesk',sans-serif; letter-spacing:-0.01em; }
+  .mono{ font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; }
+  #app{ max-width:480px; margin:0 auto; min-height:100dvh; display:flex; flex-direction:column; position:relative; }
+
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:18px 20px 14px; position:sticky; top:0; background:var(--paper);
+    z-index:5; border-bottom:1px solid var(--divider);
+  }
+  header .brand{ display:flex; align-items:center; gap:10px; }
+  header .brand .mark{
+    width:30px; height:30px; border-radius:8px; background:var(--accent);
+    display:flex; align-items:center; justify-content:center; color:#fff; font-size:15px; font-weight:700;
+    font-family:'Space Grotesk',sans-serif;
+  }
+  header h1{ font-size:18px; margin:0; font-weight:700; }
+  header button.icon-btn{
+    background:none; border:none; color:var(--muted); font-size:20px; cursor:pointer; padding:6px;
+    line-height:1;
+  }
+
+  main{ flex:1; overflow-y:auto; padding:16px 16px 96px; }
+  .card{
+    background:var(--surface); border-radius:var(--radius); padding:18px;
+    border:1px solid var(--divider); margin-bottom:14px;
+  }
+  .label{ font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:600; margin-bottom:6px; display:block; }
+  input, select{
+    width:100%; padding:12px 13px; border-radius:10px; border:1px solid var(--divider);
+    background:var(--paper); font-size:16px; color:var(--ink); font-family:inherit; margin-bottom:14px;
+  }
+  input:focus, select:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+  button.primary{
+    width:100%; padding:14px; border-radius:10px; border:none; background:var(--accent); color:#fff;
+    font-size:15px; font-weight:600; font-family:'Space Grotesk',sans-serif; cursor:pointer;
+  }
+  button.primary:active{ transform:scale(.99); }
+  button.primary:disabled{ opacity:.5; }
+  button.secondary{
+    width:100%; padding:12px; border-radius:10px; border:1px solid var(--divider); background:transparent;
+    color:var(--ink); font-size:14px; font-weight:600; cursor:pointer; font-family:'Space Grotesk',sans-serif;
+  }
+  .error-text{ color:var(--danger); font-size:13px; margin:-6px 0 12px; }
+  .hint{ color:var(--muted); font-size:12px; margin-top:-8px; margin-bottom:12px;}
+
+  .stamp-row{ display:flex; gap:12px; margin-bottom:14px; }
+  .stamp{
+    flex:1; background:var(--accent); color:#fff; border-radius:var(--radius); padding:18px 16px;
+    position:relative; overflow:hidden;
+  }
+  .stamp.alt{ background:var(--surface); color:var(--ink); border:1px solid var(--divider); }
+  .stamp .label{ color:rgba(255,255,255,.75); margin-bottom:4px; }
+  .stamp.alt .label{ color:var(--muted); }
+  .stamp .value{ font-size:26px; font-weight:600; }
+  .stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px; }
+  .stat-box{ background:var(--surface); border:1px solid var(--divider); border-radius:var(--radius); padding:14px; }
+  .stat-box .value{ font-size:19px; font-weight:600; }
+
+  table{ width:100%; border-collapse:collapse; font-size:14px; }
+  thead th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); padding:0 6px 8px; font-weight:600; }
+  tbody td{ padding:10px 6px; border-top:1px dashed var(--divider); }
+  tbody tr:last-child td{ border-bottom:none; }
+  .qty-low{ color:var(--danger); font-weight:600; }
+  .row-name{ font-weight:600; }
+  .row-sub{ color:var(--muted); font-size:12px; }
+
+  .empty{ text-align:center; padding:36px 12px; color:var(--muted); }
+  .empty .glyph{ font-size:28px; margin-bottom:8px; }
+
+  nav.tabbar{
+    position:fixed; left:0; right:0; bottom:0; margin:0 auto; max-width:480px;
+    background:var(--surface); border-top:1px solid var(--divider);
+    display:flex; padding-bottom:env(safe-area-inset-bottom); z-index:10;
+  }
+  nav.tabbar button{
+    flex:1; background:none; border:none; padding:11px 4px 9px; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; gap:3px; color:var(--muted);
+    font-family:'Inter',sans-serif; font-size:11px; font-weight:600;
+  }
+  nav.tabbar button .glyph{ font-size:19px; }
+  nav.tabbar button.active{ color:var(--accent); }
+
+  .view{ display:none; }
+  .view.active{ display:block; animation:fadeIn .18s ease; }
+  @keyframes fadeIn{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
+  @media (prefers-reduced-motion: reduce){ .view.active{ animation:none; } }
+
+  #gate{
+    position:fixed; inset:0; background:var(--paper); z-index:50;
+    display:flex; align-items:center; justify-content:center; padding:24px;
+  }
+  #gate .ticket{
+    width:100%; max-width:360px; background:var(--surface); border-radius:18px; padding:28px 24px;
+    border:1px solid var(--divider); position:relative;
+  }
+  #gate .ticket:before, #gate .ticket:after{
+    content:""; position:absolute; width:20px; height:20px; background:var(--paper); border-radius:50%;
+    top:50%; transform:translateY(-50%);
+  }
+  #gate .ticket:before{ left:-10px; }
+  #gate .ticket:after{ right:-10px; }
+  #gate .mark-big{
+    width:44px; height:44px; border-radius:12px; background:var(--accent); color:#fff;
+    display:flex; align-items:center; justify-content:center; font-family:'Space Grotesk',sans-serif;
+    font-weight:700; font-size:20px; margin-bottom:16px;
+  }
+  #gate h2{ margin:0 0 4px; font-size:20px; }
+  #gate p.sub{ color:var(--muted); font-size:13px; margin:0 0 20px; line-height:1.5; }
+  #gate details{ margin-top:4px; }
+  #gate summary{ font-size:12px; color:var(--muted); cursor:pointer; margin-bottom:10px; }
+  #gate textarea{
+    width:100%; min-height:90px; padding:10px 12px; border-radius:10px; border:1px solid var(--divider);
+    background:var(--paper); font-family:'IBM Plex Mono',monospace; font-size:12px; margin-bottom:10px;
+  }
+
+  .toast{
+    position:fixed; left:50%; bottom:96px; transform:translateX(-50%); background:var(--ink); color:#fff;
+    padding:10px 18px; border-radius:30px; font-size:13px; z-index:60; opacity:0; pointer-events:none;
+    transition:opacity .2s ease, transform .2s ease; white-space:nowrap; max-width:88vw; overflow:hidden; text-overflow:ellipsis;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(-4px); }
+  .toast.err{ background:var(--danger); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== Connect / passcode gate ===== -->
+  <div id="gate">
+    <div class="ticket">
+      <div class="mark-big">$</div>
+      <h2>Ledger</h2>
+      <p class="sub">Enter the shared passcode to open the tracker. Ask whoever set this up if you don't have it.</p>
+      <label class="label" for="gate-passcode">Passcode</label>
+      <input id="gate-passcode" type="password" inputmode="text" autocomplete="off" placeholder="••••••">
+      <div class="error-text" id="gate-error" style="display:none;"></div>
+      <button class="primary" id="gate-submit">Open Ledger</button>
+      <details id="gate-advanced">
+        <summary>Connection settings (first-time setup only)</summary>
+        <label class="label" for="gate-config">Firebase config (paste the object from your Firebase console)</label>
+        <textarea id="gate-config" placeholder='{"apiKey":"…","authDomain":"…","projectId":"…", …}'></textarea>
+        <div class="hint">This only needs to be entered once per device. See README for where to find it.</div>
+      </details>
+    </div>
+  </div>
+
+  <!-- ===== App shell ===== -->
+  <header>
+    <div class="brand">
+      <div class="mark">$</div>
+      <h1>Ledger</h1>
+    </div>
+    <button class="icon-btn" id="settings-btn" title="Connection settings" aria-label="Settings">⚙</button>
+  </header>
+
+  <main>
+    <!-- Dashboard -->
+    <section class="view" id="view-dashboard">
+      <div class="stamp-row">
+        <div class="stamp">
+          <span class="label">Total profit</span>
+          <div class="value mono" id="stat-profit">$0.00</div>
+        </div>
+        <div class="stamp alt">
+          <span class="label">Units sold</span>
+          <div class="value mono" id="stat-units">0</div>
+        </div>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-box">
+          <span class="label">Revenue</span>
+          <div class="value mono" id="stat-revenue">$0.00</div>
+        </div>
+        <div class="stat-box">
+          <span class="label">Inventory value (cost)</span>
+          <div class="value mono" id="stat-invvalue">$0.00</div>
+        </div>
+      </div>
+      <div class="card">
+        <span class="label">Sales &amp; profit over time</span>
+        <canvas id="chart" height="180"></canvas>
+      </div>
+      <div class="card">
+        <span class="label">Current inventory</span>
+        <table id="inventory-table">
+          <thead><tr><th>Product</th><th>Cost</th><th>In stock</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty" id="inventory-empty" style="display:none;">
+          <div class="glyph">📦</div>No products yet — add one from the Restock tab.
+        </div>
+      </div>
+    </section>
+
+    <!-- Sell -->
+    <section class="view" id="view-sell">
+      <div class="card">
+        <h3 style="margin-top:0;">Record a sale</h3>
+        <label class="label" for="sell-product">Product</label>
+        <select id="sell-product"></select>
+        <div class="hint" id="sell-stock-hint"></div>
+        <label class="label" for="sell-price">Sale price (per unit)</label>
+        <input id="sell-price" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
+        <label class="label" for="sell-qty">Quantity sold</label>
+        <input id="sell-qty" type="number" inputmode="numeric" min="1" step="1" placeholder="1">
+        <div class="error-text" id="sell-error" style="display:none;"></div>
+        <button class="primary" id="sell-submit">Record sale</button>
+      </div>
+    </section>
+
+    <!-- Restock -->
+    <section class="view" id="view-restock">
+      <div class="card">
+        <h3 style="margin-top:0;">Add / restock a product</h3>
+        <label class="label" for="restock-name">Product name</label>
+        <input id="restock-name" list="product-names" placeholder="e.g. Blueberry Jam 250g" autocomplete="off">
+        <datalist id="product-names"></datalist>
+        <div class="hint">Matches an existing name exactly (not case-sensitive) — stock is added, not duplicated.</div>
+        <label class="label" for="restock-cost">Cost per unit</label>
+        <input id="restock-cost" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
+        <label class="label" for="restock-qty">Quantity to add</label>
+        <input id="restock-qty" type="number" inputmode="numeric" min="1" step="1" placeholder="0">
+        <div class="error-text" id="restock-error" style="display:none;"></div>
+        <button class="primary" id="restock-submit">Save</button>
+      </div>
+    </section>
+
+    <!-- History -->
+    <section class="view" id="view-history">
+      <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+          <h3 style="margin:0;">Sales history</h3>
+          <button class="secondary" style="width:auto; padding:8px 14px;" id="export-csv">Export CSV</button>
+        </div>
+        <table id="history-table">
+          <thead><tr><th>Date</th><th>Product</th><th>Qty</th><th>Revenue</th><th>Profit</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty" id="history-empty" style="display:none;">
+          <div class="glyph">🧾</div>No sales recorded yet.
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button data-view="dashboard" class="active"><span class="glyph">◧</span>Dashboard</button>
+    <button data-view="sell"><span class="glyph">＄</span>Sell</button>
+    <button data-view="restock"><span class="glyph">＋</span>Restock</button>
+    <button data-view="history"><span class="glyph">≣</span>History</button>
+  </nav>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+/* =============================================================
+   Firebase Auth + Firestore backend.
+   One shared sign-in identity for the whole team: the "passcode"
+   the person types IS the Firebase Auth password for a single
+   fixed account (see README for how that account is created).
+   Firestore security rules reject anything not signed in, so
+   there is no publicly-reachable data or URL.
+   ============================================================= */
+const LS_CONFIG = 'ledger_fb_config';
+const LS_PASS = 'ledger_passcode';
+const FIXED_EMAIL = 'team@ledger.local'; // not a real inbox — just the single shared account's username
+
+let firebaseConfig = null;
+try { firebaseConfig = JSON.parse(localStorage.getItem(LS_CONFIG) || 'null'); } catch (e) {}
+let PASSCODE = localStorage.getItem(LS_PASS) || '';
+
+let auth, db;
+let STATE = { products: [], sales: [] };
+let chart;
+let unsubProducts, unsubSales;
+
+function ensureFirebase() {
+  if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+  auth = firebase.auth();
+  db = firebase.firestore();
+}
+
+/* ================= Toast ================= */
+let toastTimer;
+function toast(msg, isErr) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isErr ? ' err' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+/* ================= Gate ================= */
+const gate = document.getElementById('gate');
+function showGate() { gate.style.display = 'flex'; }
+function hideGate() { gate.style.display = 'none'; }
+
+async function attemptLogin(passcode) {
+  ensureFirebase();
+  await auth.signInWithEmailAndPassword(FIXED_EMAIL, passcode);
+}
+
+document.getElementById('gate-submit').addEventListener('click', async () => {
+  const configText = document.getElementById('gate-config').value.trim();
+  const pass = document.getElementById('gate-passcode').value;
+  const errEl = document.getElementById('gate-error');
+  errEl.style.display = 'none';
+
+  let cfg = firebaseConfig;
+  if (configText) {
+    try { cfg = JSON.parse(configText); } catch (e) {
+      document.getElementById('gate-advanced').open = true;
+      return showErr(errEl, 'That Firebase config isn\'t valid JSON — paste it exactly as shown in the console.');
+    }
+  }
+  if (!cfg) {
+    document.getElementById('gate-advanced').open = true;
+    return showErr(errEl, 'Paste your Firebase config first (see Connection settings below).');
+  }
+  if (!pass) return showErr(errEl, 'Enter the passcode.');
+
+  const btn = document.getElementById('gate-submit');
+  btn.disabled = true; btn.textContent = 'Checking…';
+  try {
+    firebaseConfig = cfg;
+    PASSCODE = pass;
+    await attemptLogin(PASSCODE);
+    localStorage.setItem(LS_CONFIG, JSON.stringify(firebaseConfig));
+    localStorage.setItem(LS_PASS, PASSCODE);
+    hideGate();
+    startListening();
+  } catch (e) {
+    showErr(errEl, friendlyAuthError(e));
+  } finally {
+    btn.disabled = false; btn.textContent = 'Open Ledger';
+  }
+});
+
+function friendlyAuthError(e) {
+  const code = e.code || '';
+  if (code.includes('wrong-password') || code.includes('invalid-credential') || code.includes('invalid-login-credentials')) return 'Incorrect passcode.';
+  if (code.includes('user-not-found')) return 'No shared account found yet — finish the Firebase setup in the README first.';
+  if (code.includes('network')) return 'Could not reach Firebase. Check your connection and try again.';
+  if (code.includes('api-key-not-valid') || code.includes('invalid-api-key')) return 'That Firebase config looks wrong — re-copy it from the console.';
+  return e.message || 'Something went wrong.';
+}
+
+document.getElementById('settings-btn').addEventListener('click', () => {
+  document.getElementById('gate-config').value = firebaseConfig ? JSON.stringify(firebaseConfig) : '';
+  document.getElementById('gate-passcode').value = '';
+  document.getElementById('gate-advanced').open = true;
+  showGate();
+});
+
+/* ================= Tabs ================= */
+document.querySelectorAll('nav.tabbar button').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav.tabbar button').forEach((b) => b.classList.remove('active'));
+    document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('view-' + btn.dataset.view).classList.add('active');
+  });
+});
+document.getElementById('view-dashboard').classList.add('active');
+
+/* ================= Live data (Firestore snapshots) ================= */
+function startListening() {
+  if (unsubProducts) unsubProducts();
+  if (unsubSales) unsubSales();
+
+  unsubProducts = db.collection('products').onSnapshot((snap) => {
+    STATE.products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderDashboard();
+    renderSellForm();
+    renderRestockList();
+  }, (err) => toast(err.message, true));
+
+  unsubSales = db.collection('sales').orderBy('timestamp', 'desc').onSnapshot((snap) => {
+    STATE.sales = snap.docs.map((d) => {
+      const v = d.data();
+      return { id: d.id, ...v, timestamp: v.timestamp ? v.timestamp.toDate() : new Date() };
+    });
+    renderDashboard();
+    renderHistory();
+  }, (err) => toast(err.message, true));
+}
+
+function money(n) { return '$' + Number(n || 0).toFixed(2); }
+function slugify(name) {
+  const s = String(name).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-+|-+$)/g, '');
+  return s || 'p-' + encodeURIComponent(name).replace(/%/g, '');
+}
+
+/* ================= Dashboard ================= */
+function renderDashboard() {
+  const totalProfit = STATE.sales.reduce((s, x) => s + x.profit, 0);
+  const totalUnits = STATE.sales.reduce((s, x) => s + x.quantity, 0);
+  const totalRevenue = STATE.sales.reduce((s, x) => s + x.revenue, 0);
+  const invValue = STATE.products.reduce((s, p) => s + p.cost * p.quantity, 0);
+
+  document.getElementById('stat-profit').textContent = money(totalProfit);
+  document.getElementById('stat-units').textContent = totalUnits;
+  document.getElementById('stat-revenue').textContent = money(totalRevenue);
+  document.getElementById('stat-invvalue').textContent = money(invValue);
+
+  const tbody = document.querySelector('#inventory-table tbody');
+  tbody.innerHTML = '';
+  document.getElementById('inventory-empty').style.display = STATE.products.length ? 'none' : 'block';
+  STATE.products.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach((p) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="row-name">${escapeHtml(p.name)}</td>
+      <td class="mono">${money(p.cost)}</td>
+      <td class="mono ${p.quantity <= 3 ? 'qty-low' : ''}">${p.quantity}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  renderChart();
+}
+
+function renderChart() {
+  const byDay = {};
+  STATE.sales.forEach((s) => {
+    const day = s.timestamp.toISOString().slice(0, 10);
+    if (!byDay[day]) byDay[day] = { revenue: 0, profit: 0 };
+    byDay[day].revenue += s.revenue;
+    byDay[day].profit += s.profit;
+  });
+  const days = Object.keys(byDay).sort();
+  const revenueData = days.map((d) => byDay[d].revenue);
+  const profitData = days.map((d) => byDay[d].profit);
+  const labels = days.map((d) => {
+    const dt = new Date(d + 'T00:00:00');
+    return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  });
+
+  const ctx = document.getElementById('chart').getContext('2d');
+  if (chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels.length ? labels : ['—'],
+      datasets: [
+        { label: 'Revenue', data: revenueData, borderColor: '#6B7268', backgroundColor: 'rgba(107,114,104,0.08)', tension: .3, fill: true, pointRadius: 2 },
+        { label: 'Profit', data: profitData, borderColor: '#2D6A4F', backgroundColor: 'rgba(45,106,79,0.12)', tension: .3, fill: true, pointRadius: 2 },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } },
+      scales: {
+        y: { ticks: { callback: (v) => '$' + v, font: { size: 10 } }, grid: { color: '#EFEDE5' } },
+        x: { ticks: { font: { size: 10 } }, grid: { display: false } },
+      },
+    },
+  });
+}
+
+/* ================= Sell ================= */
+function renderSellForm() {
+  const sel = document.getElementById('sell-product');
+  const prevValue = sel.value;
+  sel.innerHTML = STATE.products
+    .slice().sort((a, b) => a.name.localeCompare(b.name))
+    .map((p) => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.name)} (${p.quantity} in stock)</option>`)
+    .join('');
+  if (prevValue && STATE.products.some((p) => p.id === prevValue)) sel.value = prevValue;
+  updateStockHint();
+}
+document.getElementById('sell-product').addEventListener('change', updateStockHint);
+function updateStockHint() {
+  const id = document.getElementById('sell-product').value;
+  const p = STATE.products.find((x) => x.id === id);
+  document.getElementById('sell-stock-hint').textContent = p ? `${p.quantity} unit(s) currently in stock` : '';
+}
+
+document.getElementById('sell-submit').addEventListener('click', async () => {
+  const errEl = document.getElementById('sell-error');
+  errEl.style.display = 'none';
+  const productId = document.getElementById('sell-product').value;
+  const salePrice = parseFloat(document.getElementById('sell-price').value);
+  const quantity = parseInt(document.getElementById('sell-qty').value, 10);
+
+  if (!productId) return showErr(errEl, 'Add a product first (Restock tab).');
+  if (isNaN(salePrice) || salePrice < 0) return showErr(errEl, 'Enter a valid sale price.');
+  if (isNaN(quantity) || quantity <= 0) return showErr(errEl, 'Enter a valid quantity.');
+
+  const btn = document.getElementById('sell-submit');
+  btn.disabled = true;
+  try {
+    await recordSale(productId, salePrice, quantity);
+    toast('Sale recorded');
+    document.getElementById('sell-price').value = '';
+    document.getElementById('sell-qty').value = '';
+  } catch (e) {
+    showErr(errEl, e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// Firestore transaction: re-checks stock at write time, so two people
+// selling the last units at once can't both succeed.
+function recordSale(productId, salePrice, quantity) {
+  const productRef = db.collection('products').doc(productId);
+  const saleRef = db.collection('sales').doc();
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(productRef);
+    if (!snap.exists) throw new Error('Product not found');
+    const product = snap.data();
+    if (quantity > product.quantity) throw new Error(`Only ${product.quantity} unit(s) of "${product.name}" in stock`);
+    const revenue = salePrice * quantity;
+    const profit = (salePrice - product.cost) * quantity;
+    tx.update(productRef, { quantity: product.quantity - quantity });
+    tx.set(saleRef, {
+      productId, productName: product.name, salePrice, costPerUnit: product.cost,
+      quantity, revenue, profit, timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+}
+
+/* ================= Restock ================= */
+function renderRestockList() {
+  const dl = document.getElementById('product-names');
+  dl.innerHTML = STATE.products.map((p) => `<option value="${escapeAttr(p.name)}">`).join('');
+}
+
+document.getElementById('restock-submit').addEventListener('click', async () => {
+  const errEl = document.getElementById('restock-error');
+  errEl.style.display = 'none';
+  const name = document.getElementById('restock-name').value.trim();
+  const cost = parseFloat(document.getElementById('restock-cost').value);
+  const quantity = parseInt(document.getElementById('restock-qty').value, 10);
+
+  if (!name) return showErr(errEl, 'Enter a product name.');
+  if (isNaN(cost) || cost < 0) return showErr(errEl, 'Enter a valid cost per unit.');
+  if (isNaN(quantity) || quantity <= 0) return showErr(errEl, 'Enter a quantity greater than 0.');
+
+  const btn = document.getElementById('restock-submit');
+  btn.disabled = true;
+  try {
+    const restocked = await addOrRestockProduct(name, cost, quantity);
+    toast(restocked ? `Restocked ${name}` : `Added ${name}`);
+    document.getElementById('restock-name').value = '';
+    document.getElementById('restock-cost').value = '';
+    document.getElementById('restock-qty').value = '';
+  } catch (e) {
+    showErr(errEl, e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function addOrRestockProduct(name, cost, quantity) {
+  const id = slugify(name);
+  const ref = db.collection('products').doc(id);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (snap.exists) {
+      const existing = snap.data();
+      tx.update(ref, { cost, quantity: existing.quantity + quantity });
+      return true;
+    } else {
+      tx.set(ref, { name, cost, quantity });
+      return false;
+    }
+  });
+}
+
+/* ================= History ================= */
+function renderHistory() {
+  const tbody = document.querySelector('#history-table tbody');
+  tbody.innerHTML = '';
+  document.getElementById('history-empty').style.display = STATE.sales.length ? 'none' : 'block';
+  STATE.sales.forEach((s) => {
+    const dt = s.timestamp;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${dt.toLocaleDateString(undefined,{month:'short',day:'numeric'})}<div class="row-sub">${dt.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}</div></td>
+      <td>${escapeHtml(s.productName)}</td>
+      <td class="mono">${s.quantity}</td>
+      <td class="mono">${money(s.revenue)}</td>
+      <td class="mono">${money(s.profit)}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById('export-csv').addEventListener('click', () => {
+  if (!STATE.sales.length) return toast('No sales to export', true);
+  const header = ['Date', 'Product', 'Sale Price', 'Cost Per Unit', 'Quantity', 'Revenue', 'Profit'];
+  const rows = STATE.sales.map((s) => [
+    s.timestamp.toISOString(),
+    s.productName,
+    s.salePrice,
+    s.costPerUnit,
+    s.quantity,
+    s.revenue.toFixed(2),
+    s.profit.toFixed(2),
+  ]);
+  const csv = [header, ...rows].map((r) => r.map(csvCell).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `sales-export-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+});
+function csvCell(v) {
+  const s = String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+/* ================= Utils ================= */
+function showErr(el, msg) { el.textContent = msg; el.style.display = 'block'; }
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeAttr(s) { return escapeHtml(s); }
+
+/* ================= Boot ================= */
+(function boot() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+  if (firebaseConfig && PASSCODE) {
+    ensureFirebase();
+    attemptLogin(PASSCODE).then(() => {
+      hideGate();
+      startListening();
+    }).catch(() => {
+      showGate();
+      document.getElementById('gate-config').value = JSON.stringify(firebaseConfig);
+    });
+  } else {
+    showGate();
+    if (firebaseConfig) document.getElementById('gate-config').value = JSON.stringify(firebaseConfig);
+  }
+})();
+</script>
+</body>
+</html>
