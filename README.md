@@ -5,10 +5,11 @@ credit card anywhere, and access is enforced by real authentication rather than
 an open URL.
 
 **Stack**
+
 - Database: **Firestore** (Google Firebase's NoSQL database) — data is private by
   default; Firestore security rules reject any request that isn't signed in.
 - Auth: **Firebase Authentication** — one shared account for the whole team. The
-  passcode people type in the app *is* that account's password.
+  passcode people type in the app _is_ that account's password.
 - Frontend: a single static `index.html` (+ manifest/icons) hosted on **GitHub
   Pages** — installable to an iPhone home screen as a real app icon.
 
@@ -44,7 +45,7 @@ more than a few people logging sales will ever use.
      projectId: "ledger-xxxxx",
      storageBucket: "ledger-xxxxx.appspot.com",
      messagingSenderId: "...",
-     appId: "..."
+     appId: "...",
    };
    ```
    Copy that whole `{ ... }` object — you'll paste it into the app once. (This
@@ -73,6 +74,7 @@ more than a few people logging sales will ever use.
 3. Each device only needs to do this once — it's remembered after that.
 
 ### Install to iPhone home screen
+
 Open the URL in **Safari** → Share icon → **Add to Home Screen**. Launches
 full-screen with its own icon, no browser chrome.
 
@@ -82,6 +84,7 @@ accounts to create.
 ---
 
 ## How it works day-to-day
+
 - **Restock**: adding a product whose name already exists (matched case-
   insensitively) adds to its existing stock instead of creating a duplicate, and
   updates its cost-per-unit to whatever you just entered.
@@ -94,6 +97,7 @@ accounts to create.
 - **CSV export**: one tap in History, opens in Excel/Numbers/Sheets.
 
 ## Why this is more secure than a spreadsheet-backed version
+
 - Nothing is reachable without signing in — Firestore's rules reject unauthenticated
   requests outright, so there's no URL that exposes your data if someone finds it.
 - Data lives in Google's managed database (encrypted at rest and in transit), not
@@ -103,8 +107,9 @@ accounts to create.
   atomically.
 
 ## Notes & limits worth knowing
+
 - The shared passcode is one identity for the whole team — fine for a small trusted
-  group, but there's no per-person audit trail of *who* recorded which sale. If you
+  group, but there's no per-person audit trail of _who_ recorded which sale. If you
   need that later, each person could get their own Firebase Auth login instead;
   ask and this can be extended.
 - To change the passcode, go to Firebase console → Authentication → Users → the
