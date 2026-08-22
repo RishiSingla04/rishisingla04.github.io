@@ -343,6 +343,23 @@ async function attemptLogin(passcode) {
   await auth.signInWithEmailAndPassword(FIXED_EMAIL, passcode);
 }
 
+// Firebase's console shows the config as a JS object literal (unquoted keys,
+// `const firebaseConfig = { ... };`) rather than strict JSON, so JSON.parse
+// alone rejects a straight copy-paste. Strip any variable declaration/semicolon
+// wrapper, then fall back to evaluating it as a JS object literal — this only
+// ever runs on text the person themselves pasted from their own console.
+function parseFirebaseConfig(text) {
+  try { return JSON.parse(text); } catch (e) {}
+  try {
+    const cleaned = text
+      .replace(/^\s*(export\s+)?(const|var|let)\s+\w+\s*=\s*/, '')
+      .replace(/;\s*$/, '');
+    const obj = Function('"use strict"; return (' + cleaned + ')')();
+    if (obj && typeof obj === 'object') return obj;
+  } catch (e) {}
+  return null;
+}
+
 document.getElementById('gate-submit').addEventListener('click', async () => {
   const configText = document.getElementById('gate-config').value.trim();
   const pass = document.getElementById('gate-passcode').value;
@@ -351,9 +368,10 @@ document.getElementById('gate-submit').addEventListener('click', async () => {
 
   let cfg = firebaseConfig;
   if (configText) {
-    try { cfg = JSON.parse(configText); } catch (e) {
+    cfg = parseFirebaseConfig(configText);
+    if (!cfg) {
       document.getElementById('gate-advanced').open = true;
-      return showErr(errEl, 'That Firebase config isn\'t valid JSON — paste it exactly as shown in the console.');
+      return showErr(errEl, "Couldn't read that config — copy the whole { ... } block from Firebase's console, unedited.");
     }
   }
   if (!cfg) {
