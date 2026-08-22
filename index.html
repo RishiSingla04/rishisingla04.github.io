@@ -524,6 +524,11 @@ function renderSellForm() {
     .slice().sort((a, b) => a.name.localeCompare(b.name))
     .map((p) => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.name)} (${p.quantity} in stock)</option>`)
     .join('');
+  console.debug('renderSellForm: products=', STATE.products.length, sel.innerHTML);
+  // If no products are present (unexpected), show a disabled placeholder so users see a hint.
+  if (!sel.options.length) {
+    sel.innerHTML = '<option disabled selected>No products — add one from Restock</option>';
+  }
   if (prevValue && STATE.products.some((p) => p.id === prevValue)) sel.value = prevValue;
   updateStockHint();
 }
