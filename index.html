@@ -106,6 +106,9 @@
   .qty-low{ color:var(--danger); font-weight:600; }
   .row-name{ font-weight:600; }
   .row-sub{ color:var(--muted); font-size:12px; }
+  .actions{ display:flex; gap:6px; white-space:nowrap; }
+  .action-btn{ border:1px solid var(--divider); border-radius:8px; background:transparent; color:var(--ink); padding:6px 8px; font-size:12px; cursor:pointer; }
+  .action-btn.delete{ color:var(--danger); }
 
   .empty{ text-align:center; padding:36px 12px; color:var(--muted); }
   .empty .glyph{ font-size:28px; margin-bottom:8px; }
@@ -163,6 +166,13 @@
   }
   .toast.show{ opacity:1; transform:translateX(-50%) translateY(-4px); }
   .toast.err{ background:var(--danger); }
+  dialog{ border:1px solid var(--divider); border-radius:18px; padding:0; width:min(360px, calc(100% - 32px)); color:var(--ink); }
+  dialog::backdrop{ background:rgba(27,31,29,.45); }
+  .dialog-body{ padding:24px; }
+  .dialog-body h3{ margin:0 0 4px; }
+  .dialog-body .sub{ color:var(--muted); font-size:13px; margin:0 0 18px; }
+  .dialog-actions{ display:flex; gap:10px; }
+  .dialog-actions button{ flex:1; }
 </style>
 </head>
 <body>
@@ -242,10 +252,11 @@
         <label class="label" for="sell-product">Product</label>
         <select id="sell-product"></select>
         <div class="hint" id="sell-stock-hint"></div>
-        <label class="label" for="sell-price">Sale price (per unit)</label>
+        <label class="label" for="sell-price">Total sale price</label>
         <input id="sell-price" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
         <label class="label" for="sell-qty">Quantity sold</label>
         <input id="sell-qty" type="number" inputmode="numeric" min="1" step="1" placeholder="1">
+        <div class="hint" id="sell-unit-price-hint">Per-unit sale price: $0.00</div>
         <div class="error-text" id="sell-error" style="display:none;"></div>
         <button class="primary" id="sell-submit">Record sale</button>
       </div>
@@ -276,7 +287,7 @@
           <button class="secondary" style="width:auto; padding:8px 14px;" id="export-csv">Export CSV</button>
         </div>
         <table id="history-table">
-          <thead><tr><th>Date</th><th>Product</th><th>Qty</th><th>Revenue</th><th>Profit</th></tr></thead>
+          <thead><tr><th>Date</th><th>Product</th><th>Qty</th><th>Revenue</th><th>Profit</th><th>Actions</th></tr></thead>
           <tbody></tbody>
         </table>
         <div class="empty" id="history-empty" style="display:none;">
@@ -294,6 +305,23 @@
   </nav>
 
   <div class="toast" id="toast"></div>
+
+  <dialog id="edit-sale-dialog">
+    <form class="dialog-body" id="edit-sale-form">
+      <h3>Edit sale</h3>
+      <p class="sub" id="edit-sale-product"></p>
+      <label class="label" for="edit-sale-price">Total sale price</label>
+      <input id="edit-sale-price" type="number" inputmode="decimal" step="0.01" min="0" required>
+      <label class="label" for="edit-sale-qty">Quantity sold</label>
+      <input id="edit-sale-qty" type="number" inputmode="numeric" min="1" step="1" required>
+      <div class="hint" id="edit-sale-unit-price">Per-unit sale price: $0.00</div>
+      <div class="error-text" id="edit-sale-error" style="display:none;"></div>
+      <div class="dialog-actions">
+        <button type="button" class="secondary" id="edit-sale-cancel">Cancel</button>
+        <button type="submit" class="primary">Save changes</button>
+      </div>
+    </form>
+  </dialog>
 </div>
 
 <script>
@@ -549,30 +577,39 @@ function renderSellForm() {
   updateStockHint();
 }
 document.getElementById('sell-product').addEventListener('change', updateStockHint);
+document.getElementById('sell-price').addEventListener('input', updateUnitPriceHint);
+document.getElementById('sell-qty').addEventListener('input', updateUnitPriceHint);
 function updateStockHint() {
   const id = document.getElementById('sell-product').value;
   const p = STATE.products.find((x) => x.id === id);
   document.getElementById('sell-stock-hint').textContent = p ? `${p.quantity} unit(s) currently in stock` : '';
+}
+function updateUnitPriceHint() {
+  const saleTotal = parseFloat(document.getElementById('sell-price').value);
+  const quantity = parseInt(document.getElementById('sell-qty').value, 10);
+  const unitPrice = saleTotal >= 0 && quantity > 0 ? saleTotal / quantity : 0;
+  document.getElementById('sell-unit-price-hint').textContent = `Per-unit sale price: ${money(unitPrice)}`;
 }
 
 document.getElementById('sell-submit').addEventListener('click', async () => {
   const errEl = document.getElementById('sell-error');
   errEl.style.display = 'none';
   const productId = document.getElementById('sell-product').value;
-  const salePrice = parseFloat(document.getElementById('sell-price').value);
+  const saleTotal = parseFloat(document.getElementById('sell-price').value);
   const quantity = parseInt(document.getElementById('sell-qty').value, 10);
 
   if (!productId) return showErr(errEl, 'Add a product first (Restock tab).');
-  if (isNaN(salePrice) || salePrice < 0) return showErr(errEl, 'Enter a valid sale price.');
+  if (isNaN(saleTotal) || saleTotal < 0) return showErr(errEl, 'Enter a valid total sale price.');
   if (isNaN(quantity) || quantity <= 0) return showErr(errEl, 'Enter a valid quantity.');
 
   const btn = document.getElementById('sell-submit');
   btn.disabled = true;
   try {
-    await recordSale(productId, salePrice, quantity);
+    await recordSale(productId, saleTotal, quantity);
     toast('Sale recorded');
     document.getElementById('sell-price').value = '';
     document.getElementById('sell-qty').value = '';
+    updateUnitPriceHint();
   } catch (e) {
     showErr(errEl, e.message);
   } finally {
@@ -582,7 +619,7 @@ document.getElementById('sell-submit').addEventListener('click', async () => {
 
 // Firestore transaction: re-checks stock at write time, so two people
 // selling the last units at once can't both succeed.
-function recordSale(productId, salePrice, quantity) {
+function recordSale(productId, saleTotal, quantity) {
   const productRef = db.collection('products').doc(productId);
   const saleRef = db.collection('sales').doc();
   return db.runTransaction(async (tx) => {
@@ -590,11 +627,12 @@ function recordSale(productId, salePrice, quantity) {
     if (!snap.exists) throw new Error('Product not found');
     const product = snap.data();
     if (quantity > product.quantity) throw new Error(`Only ${product.quantity} unit(s) of "${product.name}" in stock`);
-    const revenue = salePrice * quantity;
+    const salePrice = saleTotal / quantity;
+    const revenue = saleTotal;
     const profit = (salePrice - product.cost) * quantity;
     tx.update(productRef, { quantity: product.quantity - quantity });
     tx.set(saleRef, {
-      productId, productName: product.name, salePrice, costPerUnit: product.cost,
+      productId, productName: product.name, salePrice, saleTotal, costPerUnit: product.cost,
       quantity, revenue, profit, timestamp: firebase.firestore.FieldValue.serverTimestamp(),
     });
   });
@@ -660,17 +698,105 @@ function renderHistory() {
       <td>${escapeHtml(s.productName)}</td>
       <td class="mono">${s.quantity}</td>
       <td class="mono">${money(s.revenue)}</td>
-      <td class="mono">${money(s.profit)}</td>`;
+      <td class="mono">${money(s.profit)}</td>
+      <td><div class="actions"><button class="action-btn" type="button">Edit</button><button class="action-btn delete" type="button">Delete</button></div></td>`;
+    tr.querySelector('.action-btn').addEventListener('click', () => openEditSale(s));
+    tr.querySelector('.action-btn.delete').addEventListener('click', () => deleteSale(s));
     tbody.appendChild(tr);
   });
 }
 
+let editingSaleId = null;
+const editSaleDialog = document.getElementById('edit-sale-dialog');
+
+function openEditSale(sale) {
+  editingSaleId = sale.id;
+  document.getElementById('edit-sale-product').textContent = sale.productName;
+  document.getElementById('edit-sale-price').value = sale.saleTotal ?? sale.revenue;
+  document.getElementById('edit-sale-qty').value = sale.quantity;
+  document.getElementById('edit-sale-error').style.display = 'none';
+  updateEditSaleUnitPrice();
+  editSaleDialog.showModal();
+}
+
+function updateEditSaleUnitPrice() {
+  const saleTotal = parseFloat(document.getElementById('edit-sale-price').value);
+  const quantity = parseInt(document.getElementById('edit-sale-qty').value, 10);
+  const unitPrice = saleTotal >= 0 && quantity > 0 ? saleTotal / quantity : 0;
+  document.getElementById('edit-sale-unit-price').textContent = `Per-unit sale price: ${money(unitPrice)}`;
+}
+
+document.getElementById('edit-sale-price').addEventListener('input', updateEditSaleUnitPrice);
+document.getElementById('edit-sale-qty').addEventListener('input', updateEditSaleUnitPrice);
+document.getElementById('edit-sale-cancel').addEventListener('click', () => editSaleDialog.close());
+document.getElementById('edit-sale-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const errorEl = document.getElementById('edit-sale-error');
+  errorEl.style.display = 'none';
+  const saleTotal = parseFloat(document.getElementById('edit-sale-price').value);
+  const quantity = parseInt(document.getElementById('edit-sale-qty').value, 10);
+  if (isNaN(saleTotal) || saleTotal < 0) return showErr(errorEl, 'Enter a valid total sale price.');
+  if (isNaN(quantity) || quantity <= 0) return showErr(errorEl, 'Enter a valid quantity.');
+
+  const submit = event.currentTarget.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  try {
+    await updateSale(editingSaleId, saleTotal, quantity);
+    editSaleDialog.close();
+    toast('Sale updated');
+  } catch (e) {
+    showErr(errorEl, e.message);
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+function updateSale(saleId, saleTotal, quantity) {
+  const saleRef = db.collection('sales').doc(saleId);
+  return db.runTransaction(async (tx) => {
+    const saleSnap = await tx.get(saleRef);
+    if (!saleSnap.exists) throw new Error('Sale not found');
+    const sale = saleSnap.data();
+    const productRef = db.collection('products').doc(sale.productId);
+    const productSnap = await tx.get(productRef);
+    if (!productSnap.exists) throw new Error('Product not found');
+    const product = productSnap.data();
+    const availableQuantity = product.quantity + sale.quantity;
+    if (quantity > availableQuantity) throw new Error(`Only ${availableQuantity} unit(s) available for this sale`);
+    const salePrice = saleTotal / quantity;
+    const revenue = saleTotal;
+    const profit = (salePrice - product.cost) * quantity;
+    tx.update(productRef, { quantity: availableQuantity - quantity });
+    tx.update(saleRef, { salePrice, saleTotal, quantity, revenue, profit, costPerUnit: product.cost });
+  });
+}
+
+async function deleteSale(sale) {
+  if (!confirm(`Delete the sale of ${sale.quantity} ${sale.productName}?`)) return;
+  try {
+    const saleRef = db.collection('sales').doc(sale.id);
+    const productRef = db.collection('products').doc(sale.productId);
+    await db.runTransaction(async (tx) => {
+      const saleSnap = await tx.get(saleRef);
+      if (!saleSnap.exists) throw new Error('Sale not found');
+      const productSnap = await tx.get(productRef);
+      if (!productSnap.exists) throw new Error('Product not found');
+      tx.update(productRef, { quantity: productSnap.data().quantity + saleSnap.data().quantity });
+      tx.delete(saleRef);
+    });
+    toast('Sale deleted');
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
 document.getElementById('export-csv').addEventListener('click', () => {
   if (!STATE.sales.length) return toast('No sales to export', true);
-  const header = ['Date', 'Product', 'Sale Price', 'Cost Per Unit', 'Quantity', 'Revenue', 'Profit'];
+  const header = ['Date', 'Product', 'Total Sale Price', 'Sale Price Per Unit', 'Cost Per Unit', 'Quantity', 'Revenue', 'Profit'];
   const rows = STATE.sales.map((s) => [
     s.timestamp.toISOString(),
     s.productName,
+    s.saleTotal ?? s.revenue,
     s.salePrice,
     s.costPerUnit,
     s.quantity,
