@@ -266,14 +266,24 @@
     <section class="view" id="view-restock">
       <div class="card">
         <h3 style="margin-top:0;">Add / restock a product</h3>
-        <label class="label" for="restock-name">Product name</label>
-        <input id="restock-name" list="product-names" placeholder="e.g. Blueberry Jam 250g" autocomplete="off">
-        <datalist id="product-names"></datalist>
-        <div class="hint">Matches an existing name exactly (not case-sensitive) — stock is added, not duplicated.</div>
-        <label class="label" for="restock-cost">Cost per unit</label>
+        <label class="label" for="restock-mode">Product</label>
+        <select id="restock-mode">
+          <option value="existing">Restock existing product</option>
+          <option value="new">Add new product</option>
+        </select>
+        <div id="restock-existing-fields">
+          <label class="label" for="restock-product">Product to restock</label>
+          <select id="restock-product"></select>
+        </div>
+        <div id="restock-new-fields" style="display:none;">
+          <label class="label" for="restock-name">New product name</label>
+          <input id="restock-name" placeholder="e.g. Blueberry Jam 250g" autocomplete="off">
+        </div>
+        <label class="label" for="restock-cost">Total cost</label>
         <input id="restock-cost" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
         <label class="label" for="restock-qty">Quantity to add</label>
         <input id="restock-qty" type="number" inputmode="numeric" min="1" step="1" placeholder="0">
+        <div class="hint" id="restock-unit-cost-hint">Cost per unit: $0.00</div>
         <div class="error-text" id="restock-error" style="display:none;"></div>
         <button class="primary" id="restock-submit">Save</button>
       </div>
@@ -640,29 +650,56 @@ function recordSale(productId, saleTotal, quantity) {
 
 /* ================= Restock ================= */
 function renderRestockList() {
-  const dl = document.getElementById('product-names');
-  dl.innerHTML = STATE.products.map((p) => `<option value="${escapeAttr(p.name)}">`).join('');
+  const select = document.getElementById('restock-product');
+  const previousValue = select.value;
+  select.innerHTML = STATE.products
+    .slice().sort((a, b) => a.name.localeCompare(b.name))
+    .map((p) => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.name)} (${p.quantity} in stock)</option>`)
+    .join('');
+  if (!select.options.length) select.innerHTML = '<option disabled selected>No products yet</option>';
+  if (previousValue && STATE.products.some((p) => p.id === previousValue)) select.value = previousValue;
+}
+
+document.getElementById('restock-mode').addEventListener('change', () => {
+  const isNew = document.getElementById('restock-mode').value === 'new';
+  document.getElementById('restock-existing-fields').style.display = isNew ? 'none' : 'block';
+  document.getElementById('restock-new-fields').style.display = isNew ? 'block' : 'none';
+});
+document.getElementById('restock-cost').addEventListener('input', updateUnitCostHint);
+document.getElementById('restock-qty').addEventListener('input', updateUnitCostHint);
+function updateUnitCostHint() {
+  const totalCost = parseFloat(document.getElementById('restock-cost').value);
+  const quantity = parseInt(document.getElementById('restock-qty').value, 10);
+  const unitCost = totalCost >= 0 && quantity > 0 ? totalCost / quantity : 0;
+  document.getElementById('restock-unit-cost-hint').textContent = `Cost per unit: ${money(unitCost)}`;
 }
 
 document.getElementById('restock-submit').addEventListener('click', async () => {
   const errEl = document.getElementById('restock-error');
   errEl.style.display = 'none';
+  const mode = document.getElementById('restock-mode').value;
+  const productId = document.getElementById('restock-product').value;
   const name = document.getElementById('restock-name').value.trim();
-  const cost = parseFloat(document.getElementById('restock-cost').value);
+  const totalCost = parseFloat(document.getElementById('restock-cost').value);
   const quantity = parseInt(document.getElementById('restock-qty').value, 10);
 
-  if (!name) return showErr(errEl, 'Enter a product name.');
-  if (isNaN(cost) || cost < 0) return showErr(errEl, 'Enter a valid cost per unit.');
+  if (mode === 'new' && !name) return showErr(errEl, 'Enter a product name.');
+  if (mode === 'existing' && !productId) return showErr(errEl, 'Select a product to restock.');
+  if (isNaN(totalCost) || totalCost < 0) return showErr(errEl, 'Enter a valid total cost.');
   if (isNaN(quantity) || quantity <= 0) return showErr(errEl, 'Enter a quantity greater than 0.');
 
   const btn = document.getElementById('restock-submit');
   btn.disabled = true;
   try {
-    const restocked = await addOrRestockProduct(name, cost, quantity);
-    toast(restocked ? `Restocked ${name}` : `Added ${name}`);
+    const unitCost = totalCost / quantity;
+    const result = mode === 'existing'
+      ? await restockProduct(productId, unitCost, quantity)
+      : await addNewProduct(name, unitCost, quantity);
+    toast(result === 'restocked' ? `Restocked ${resultName(productId)}` : `Added ${name}`);
     document.getElementById('restock-name').value = '';
     document.getElementById('restock-cost').value = '';
     document.getElementById('restock-qty').value = '';
+    updateUnitCostHint();
   } catch (e) {
     showErr(errEl, e.message);
   } finally {
@@ -670,19 +707,32 @@ document.getElementById('restock-submit').addEventListener('click', async () => 
   }
 });
 
-function addOrRestockProduct(name, cost, quantity) {
+function resultName(productId) {
+  const product = STATE.products.find((p) => p.id === productId);
+  return product ? product.name : 'product';
+}
+
+function restockProduct(productId, cost, quantity) {
+  const ref = db.collection('products').doc(productId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new Error('Product not found');
+    const existing = snap.data();
+    tx.update(ref, { cost, quantity: existing.quantity + quantity });
+    return 'restocked';
+  });
+}
+
+function addNewProduct(name, cost, quantity) {
   const id = slugify(name);
   const ref = db.collection('products').doc(id);
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (snap.exists) {
-      const existing = snap.data();
-      tx.update(ref, { cost, quantity: existing.quantity + quantity });
-      return true;
-    } else {
-      tx.set(ref, { name, cost, quantity });
-      return false;
+      throw new Error('A product with that name already exists. Select it from the existing products list.');
     }
+    tx.set(ref, { name, cost, quantity });
+    return 'added';
   });
 }
 
