@@ -420,6 +420,9 @@ document.querySelectorAll('nav.tabbar button').forEach((btn) => {
     document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('view-' + btn.dataset.view).classList.add('active');
+    // Ensure lists are up-to-date when switching tabs
+    if (btn.dataset.view === 'sell') renderSellForm();
+    if (btn.dataset.view === 'restock') renderRestockList();
   });
 });
 document.getElementById('view-dashboard').classList.add('active');
@@ -431,6 +434,7 @@ function startListening() {
 
   unsubProducts = db.collection('products').onSnapshot((snap) => {
     STATE.products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    console.debug('products onSnapshot ->', STATE.products.map(p => ({id: p.id, name: p.name, quantity: p.quantity}))); 
     renderDashboard();
     renderSellForm();
     renderRestockList();
