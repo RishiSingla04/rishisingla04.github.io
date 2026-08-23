@@ -823,7 +823,7 @@ function escapeAttr(s) { return escapeHtml(s); }
 /* ================= Boot ================= */
 (function boot() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.register('sw.js').then((registration) => registration.update()).catch(() => {});
   }
   if (firebaseConfig && PASSCODE) {
     ensureFirebase();
