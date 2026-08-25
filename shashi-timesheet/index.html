@@ -244,7 +244,7 @@
     </div>
   </div>
 
-  <button class="btn-primary" id="saveBtn">Save This Week</button>
+  <button class="btn-primary" id="saveBtn">Save &amp; Generate Image</button>
   <div class="status" id="status"></div>
 
   <button class="btn-secondary" id="imageBtn">Generate This Week's Image</button>
@@ -375,12 +375,17 @@ function recalc(){
     const line = daysCard.querySelector(`[data-hoursline="${day}"]`);
     if(line) line.textContent = st.off ? '0 hours' : `${hrs} hours`;
   });
-  const breaks = parseFloat(breaksInput.value) || 3;
+  const breaks = getBreaks();
   document.getElementById('totalWeekly').textContent = round2(weeklyTotal);
   document.getElementById('totalFinal').textContent = round2(weeklyTotal - breaks);
 }
 
 function round2(n){ return Math.round(n*100)/100; }
+
+function getBreaks(){
+  const breaks = parseFloat(breaksInput.value);
+  return Number.isFinite(breaks) ? breaks : 3;
+}
 
 function updateWeekLabel(){
   const start = new Date(weekStartInput.value + 'T00:00:00');
@@ -421,7 +426,7 @@ document.getElementById('saveBtn').addEventListener('click', async ()=>{
     };
   });
 
-  const breaks = parseFloat(breaksInput.value) || 0;
+  const breaks = getBreaks();
   const payload = {
     weekStart: weekStartInput.value,
     weekLabel: weekLabelEl.textContent.replace('Week: ',''),
@@ -437,7 +442,8 @@ document.getElementById('saveBtn').addEventListener('click', async ()=>{
       body: JSON.stringify(payload),
       headers: {'Content-Type':'text/plain;charset=utf-8'} // avoids CORS preflight on Apps Script
     });
-    statusEl.textContent = 'Saved.';
+    generateImage();
+    statusEl.textContent = 'Saved and image generated.';
     statusEl.className = 'status ok';
     loadPastWeeks();
   }catch(err){
@@ -484,10 +490,10 @@ async function loadWeekIfExists(weekStartVal){
         end: (rec && !isOff) ? parseTimeTo24(rec.end) || '06:00' : '06:00'
       };
     });
-    breaksInput.value = match.breaks || 0;
+    breaksInput.value = match.breaks ?? 3;
   } else {
     DAYS.forEach(day=>{ dayState[day] = {off:false, start:'18:00', end:'06:00'}; });
-    breaksInput.value = 0;
+    breaksInput.value = 3;
   }
 }
 
@@ -516,7 +522,7 @@ async function loadPastWeeks(){
 }
 
 // ---------- Image export (matches the printed table style) ----------
-document.getElementById('imageBtn').addEventListener('click', ()=>{
+function generateImage(){
   const canvas = document.getElementById('tableCanvas');
   const ctx = canvas.getContext('2d');
   const W = canvas.width;
@@ -588,7 +594,7 @@ document.getElementById('imageBtn').addEventListener('click', ()=>{
     const st = dayState[day];
     return sum + (st.off ? 0 : hoursBetween(st.start, st.end));
   },0);
-  const breaks = parseFloat(breaksInput.value)||0;
+  const breaks = getBreaks();
 
   function totalsRow(label, value, bold){
     ctx.font = (bold?'bold ':'') + '19px -apple-system, sans-serif';
@@ -612,7 +618,7 @@ document.getElementById('imageBtn').addEventListener('click', ()=>{
   img.style.display = 'block';
   document.getElementById('copyImageBtn').style.display = 'block';
   document.getElementById('imageHint').style.display = 'block';
-});
+}
 
 // ---------- Copy image to clipboard (one-tap, works on iOS/desktop Safari & Chrome) ----------
 document.getElementById('copyImageBtn').addEventListener('click', async ()=>{
