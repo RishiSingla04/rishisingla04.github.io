@@ -247,9 +247,12 @@
   <button class="btn-primary" id="saveBtn">Save This Week</button>
   <div class="status" id="status"></div>
 
-  <button class="btn-secondary" id="imageBtn">Download This Week as Image</button>
-  <canvas id="tableCanvas" width="1200" height="600"></canvas>
-  <p class="hint" id="imageHint" style="display:none;">Press and hold the image above, then choose "Save to Photos".</p>
+  <button class="btn-secondary" id="imageBtn">Generate This Week's Image</button>
+  <canvas id="tableCanvas" width="1200" height="600" style="display:none;"></canvas>
+  <img id="tableImage" alt="Weekly time sheet table" style="width:100%;border:1px solid var(--line);border-radius:10px;margin-top:12px;display:none;">
+  <button class="btn-secondary" id="copyImageBtn" style="display:none;margin-top:10px;">Copy Image</button>
+  <div class="status" id="copyStatus"></div>
+  <p class="hint" id="imageHint" style="display:none;">Tap "Copy Image" to copy it, or press and hold the image above and choose "Copy" or "Save to Photos".</p>
 
   <div class="card">
     <label style="margin-bottom:12px;">Past Weeks</label>
@@ -601,15 +604,34 @@ document.getElementById('imageBtn').addEventListener('click', ()=>{
   totalsRow('Breaks', breaks, true);
   totalsRow('Total', round2(weeklyTotal-breaks), true);
 
-  canvas.style.display = 'block';
+  // Show a real <img> (not the canvas) — iOS Safari only offers the
+  // native "Save to Photos" / "Copy" long-press menu on <img> elements,
+  // not on <canvas>, which is why the canvas alone wasn't saveable.
+  const img = document.getElementById('tableImage');
+  img.src = canvas.toDataURL('image/png');
+  img.style.display = 'block';
+  document.getElementById('copyImageBtn').style.display = 'block';
   document.getElementById('imageHint').style.display = 'block';
+});
 
+// ---------- Copy image to clipboard (one-tap, works on iOS/desktop Safari & Chrome) ----------
+document.getElementById('copyImageBtn').addEventListener('click', async ()=>{
+  const canvas = document.getElementById('tableCanvas');
+  const copyStatus = document.getElementById('copyStatus');
   try{
-    const link = document.createElement('a');
-    link.download = `timesheet-${weekStartInput.value}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-  }catch(e){ /* ignore — the visible canvas + hint still lets them save it */ }
+    // ClipboardItem must be constructed synchronously inside the click
+    // handler (even though the blob resolves later) or Safari blocks it.
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        'image/png': new Promise(resolve => canvas.toBlob(blob => resolve(blob), 'image/png'))
+      })
+    ]);
+    copyStatus.textContent = 'Copied! You can paste it into Messages, Notes, etc.';
+    copyStatus.className = 'status ok';
+  }catch(err){
+    copyStatus.textContent = 'Copy isn\'t supported here — press and hold the image above instead.';
+    copyStatus.className = 'status err';
+  }
 });
 
 // ---------- Init ----------
