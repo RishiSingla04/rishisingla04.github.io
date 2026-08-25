@@ -14,6 +14,8 @@
     --accent-ink:#ffffff;
     --muted:#6b7280;
     --danger:#b5432c;
+    --off-bg:#f3e4df;
+    --off-ink:#8a3b26;
     --radius:14px;
   }
   *{box-sizing:border-box;}
@@ -75,6 +77,7 @@
     align-items:center;
     justify-content:space-between;
     margin-bottom:10px;
+    gap:10px;
   }
   .day-name{
     font-weight:700;
@@ -85,38 +88,39 @@
     font-size:0.85rem;
     font-weight:400;
   }
-  .switch{
-    position:relative;
-    width:50px;
-    height:30px;
+  .off-btn{
     flex-shrink:0;
-  }
-  .switch input{opacity:0;width:0;height:0;position:absolute;}
-  .slider{
-    position:absolute;inset:0;
-    background:#d8d5cb;
+    font-family:inherit;
+    font-weight:700;
+    font-size:0.85rem;
+    padding:9px 16px;
     border-radius:999px;
-    transition:.15s;
-    cursor:pointer;
-  }
-  .slider::before{
-    content:"";
-    position:absolute;
-    width:24px;height:24px;
-    left:3px;top:3px;
+    border:1.5px solid var(--line);
     background:#fff;
-    border-radius:50%;
-    transition:.15s;
-    box-shadow:0 1px 3px rgba(0,0,0,.3);
+    color:var(--muted);
+    cursor:pointer;
+    -webkit-appearance:none;
   }
-  .switch input:checked + .slider{background:var(--accent);}
-  .switch input:checked + .slider::before{transform:translateX(20px);}
+  .off-btn.is-off{
+    background:var(--off-bg);
+    border-color:var(--off-ink);
+    color:var(--off-ink);
+  }
   .times{
-    display:none;
+    display:grid;
     grid-template-columns:1fr 1fr;
     gap:10px;
   }
-  .times.active{display:grid;}
+  .times.off .time-field{display:none;}
+  .off-label{
+    display:none;
+    grid-column:1 / -1;
+    padding:10px 0 2px;
+    color:var(--off-ink);
+    font-weight:700;
+    font-size:1rem;
+  }
+  .times.off .off-label{display:block;}
   .times label{font-size:0.8rem;color:var(--muted);margin-bottom:4px;}
   input[type="time"]{
     width:100%;
@@ -215,7 +219,7 @@
 <body>
 
   <h1>Time Sheet</h1>
-  <p class="sub">Fill in the days you worked, then save. Nothing to type by hand except tapping the time wheels.</p>
+  <p class="sub">Fill in each day's start and end time, or tap OFF for a day not worked, then save.</p>
 
   <div class="card">
     <label for="weekStart">Week starting (Sunday)</label>
@@ -257,7 +261,7 @@
    1. PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE
    (see Code.gs setup instructions — it ends in /exec)
    ====================================================== */
-const API_URL = "https://script.google.com/macros/s/AKfycbwbyMWFGz9dOtuY7OTD_aeXhWFTmVIHJOfvEKz8CncCz3OrFsbV2zDBkIRzqquYrHEQlQ/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbwBt6H30LVOoMyjDDx5mFNx1xy9P_4Zx2WLsTnvSMNlPg3sHbAfyKKoMYLs1Y2W1suj-g/exec";
 
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -269,7 +273,7 @@ const breaksInput = document.getElementById('breaks');
 const statusEl = document.getElementById('status');
 const pastWeeksEl = document.getElementById('pastWeeks');
 
-let dayState = {}; // { Sunday: {worked, start, end}, ... }
+let dayState = {}; // { Sunday: {off, start, end}, ... }
 
 function toDateInputValue(d){
   const off = d.getTimezoneOffset();
@@ -312,7 +316,7 @@ function buildDayRows(){
     const date = new Date(start);
     date.setDate(start.getDate() + i);
 
-    if(!dayState[day]) dayState[day] = {worked:false, start:'18:00', end:'06:00'};
+    if(!dayState[day]) dayState[day] = {off:false, start:'18:00', end:'06:00'};
     const st = dayState[day];
 
     const row = document.createElement('div');
@@ -323,31 +327,29 @@ function buildDayRows(){
           <span class="day-name">${day}</span><br>
           <span class="day-date">${fmtDate(date)}</span>
         </div>
-        <label class="switch">
-          <input type="checkbox" data-day="${day}" class="worked-toggle" ${st.worked ? 'checked':''}>
-          <span class="slider"></span>
-        </label>
+        <button type="button" class="off-btn ${st.off?'is-off':''}" data-day="${day}">${st.off ? 'OFF (tap to undo)' : 'Mark OFF'}</button>
       </div>
-      <div class="times ${st.worked ? 'active':''}" data-times="${day}">
-        <div>
+      <div class="times ${st.off ? 'off':''}" data-times="${day}">
+        <div class="off-label">OFF</div>
+        <div class="time-field">
           <label>Start time</label>
           <input type="time" class="start-input" data-day="${day}" value="${st.start}">
         </div>
-        <div>
+        <div class="time-field">
           <label>End time</label>
           <input type="time" class="end-input" data-day="${day}" value="${st.end}">
         </div>
-        <div class="hours-line" data-hoursline="${day}">0 hours</div>
+        <div class="hours-line" data-hoursline="${day}">${st.off ? '0 hours' : ''}</div>
       </div>
     `;
     daysCard.appendChild(row);
   });
 
-  daysCard.querySelectorAll('.worked-toggle').forEach(el=>{
-    el.addEventListener('change', e=>{
+  daysCard.querySelectorAll('.off-btn').forEach(el=>{
+    el.addEventListener('click', e=>{
       const day = e.target.dataset.day;
-      dayState[day].worked = e.target.checked;
-      daysCard.querySelector(`[data-times="${day}"]`).classList.toggle('active', e.target.checked);
+      dayState[day].off = !dayState[day].off;
+      buildDayRows();
       recalc();
     });
   });
@@ -365,10 +367,10 @@ function recalc(){
   let weeklyTotal = 0;
   DAYS.forEach(day=>{
     const st = dayState[day];
-    const hrs = st.worked ? hoursBetween(st.start, st.end) : 0;
+    const hrs = st.off ? 0 : hoursBetween(st.start, st.end);
     weeklyTotal += hrs;
     const line = daysCard.querySelector(`[data-hoursline="${day}"]`);
-    if(line) line.textContent = `${hrs} hours`;
+    if(line) line.textContent = st.off ? '0 hours' : `${hrs} hours`;
   });
   const breaks = parseFloat(breaksInput.value) || 0;
   document.getElementById('totalWeekly').textContent = round2(weeklyTotal);
@@ -386,8 +388,7 @@ function updateWeekLabel(){
 
 weekStartInput.addEventListener('change', ()=>{
   updateWeekLabel();
-  loadWeekIfExists(weekStartInput.value);
-  buildDayRows();
+  loadWeekIfExists(weekStartInput.value).then(buildDayRows);
 });
 breaksInput.addEventListener('input', recalc);
 
@@ -402,24 +403,30 @@ document.getElementById('saveBtn').addEventListener('click', async ()=>{
   statusEl.className = 'status';
 
   const start = new Date(weekStartInput.value + 'T00:00:00');
-  const payload = { 'Week Start': weekStartInput.value, 'Week Label': weekLabelEl.textContent };
   let weeklyTotal = 0;
-
-  DAYS.forEach((day,i)=>{
+  const days = DAYS.map((day,i)=>{
     const date = new Date(start); date.setDate(start.getDate()+i);
     const st = dayState[day];
-    const hrs = st.worked ? hoursBetween(st.start, st.end) : 0;
+    const hrs = st.off ? 0 : hoursBetween(st.start, st.end);
     weeklyTotal += hrs;
-    payload[day+' Date'] = fmtDate(date);
-    payload[day+' Start'] = st.worked ? fmtTime12(st.start) : '';
-    payload[day+' End'] = st.worked ? fmtTime12(st.end) : '';
-    payload[day+' Hours'] = st.worked ? hrs : '';
+    return {
+      day: day,
+      date: fmtDate(date),
+      start: st.off ? 'OFF' : fmtTime12(st.start),
+      end: st.off ? 'OFF' : fmtTime12(st.end),
+      hours: hrs
+    };
   });
 
   const breaks = parseFloat(breaksInput.value) || 0;
-  payload['Total Weekly Hours'] = round2(weeklyTotal);
-  payload['Breaks'] = breaks;
-  payload['Total'] = round2(weeklyTotal - breaks);
+  const payload = {
+    weekStart: weekStartInput.value,
+    weekLabel: weekLabelEl.textContent.replace('Week: ',''),
+    days: days,
+    totalWeekly: round2(weeklyTotal),
+    breaks: breaks,
+    total: round2(weeklyTotal - breaks)
+  };
 
   try{
     await fetch(API_URL, {
@@ -462,24 +469,21 @@ function parseTimeTo24(t){
 
 async function loadWeekIfExists(weekStartVal){
   const weeks = await fetchAllWeeks();
-  const match = weeks.find(w => {
-    const ws = w['Week Start'];
-    if(ws instanceof Object && ws.toISOString){ return toDateInputValue(new Date(ws)) === weekStartVal; }
-    return String(ws).slice(0,10) === weekStartVal;
-  });
+  const match = weeks.find(w => String(w.weekStart).slice(0,10) === weekStartVal);
   dayState = {};
   if(match){
     DAYS.forEach(day=>{
-      const start24 = parseTimeTo24(match[day+' Start']);
-      const end24 = parseTimeTo24(match[day+' End']);
+      const rec = match.days.find(d => d.day === day);
+      const isOff = rec && String(rec.start).toUpperCase() === 'OFF';
       dayState[day] = {
-        worked: !!match[day+' Hours'],
-        start: start24 || '18:00',
-        end: end24 || '06:00'
+        off: !!isOff,
+        start: (rec && !isOff) ? parseTimeTo24(rec.start) || '18:00' : '18:00',
+        end: (rec && !isOff) ? parseTimeTo24(rec.end) || '06:00' : '06:00'
       };
     });
-    breaksInput.value = match['Breaks'] || 0;
+    breaksInput.value = match.breaks || 0;
   } else {
+    DAYS.forEach(day=>{ dayState[day] = {off:false, start:'18:00', end:'06:00'}; });
     breaksInput.value = 0;
   }
 }
@@ -491,15 +495,14 @@ async function loadPastWeeks(){
     pastWeeksEl.innerHTML = '<div class="empty">No weeks saved yet.</div>';
     return;
   }
-  weeks.sort((a,b)=> String(b['Week Start']).localeCompare(String(a['Week Start'])));
+  weeks.sort((a,b)=> String(b.weekStart).localeCompare(String(a.weekStart)));
   pastWeeksEl.innerHTML = '';
   weeks.forEach(w=>{
     const div = document.createElement('div');
     div.className = 'past-week';
-    div.innerHTML = `<span>${w['Week Label'] || w['Week Start']}</span><span>Total: ${w['Total']||0}h &nbsp; <span class="arrow">›</span></span>`;
+    div.innerHTML = `<span>Week: ${w.weekLabel || w.weekStart}</span><span>Total: ${w.total||0}h &nbsp; <span class="arrow">›</span></span>`;
     div.addEventListener('click', ()=>{
-      let wsVal = w['Week Start'];
-      wsVal = (wsVal instanceof Object && wsVal.toISOString) ? toDateInputValue(new Date(wsVal)) : String(wsVal).slice(0,10);
+      const wsVal = String(w.weekStart).slice(0,10);
       weekStartInput.value = wsVal;
       updateWeekLabel();
       loadWeekIfExists(wsVal).then(buildDayRows);
@@ -513,11 +516,10 @@ async function loadPastWeeks(){
 document.getElementById('imageBtn').addEventListener('click', ()=>{
   const canvas = document.getElementById('tableCanvas');
   const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
+  const W = canvas.width;
 
-  const workedDays = DAYS.filter(d => dayState[d] && dayState[d].worked);
-  const rowCount = workedDays.length;
   const headerH = 50, colHeadH = 44, rowH = 40, totalsH = 40;
+  const rowCount = DAYS.length;
   const neededH = headerH + colHeadH + rowH*rowCount + totalsH*3 + 20;
   canvas.height = Math.max(neededH, 300);
 
@@ -539,7 +541,6 @@ document.getElementById('imageBtn').addEventListener('click', ()=>{
   cols.forEach(c => colX.push(colX[colX.length-1] + c.w*W));
 
   let y = 0;
-  // outer border + title
   ctx.strokeRect(0,0,W, canvas.height-1);
   ctx.font = 'bold 24px -apple-system, sans-serif';
   ctx.fillStyle = '#000';
@@ -558,21 +559,20 @@ document.getElementById('imageBtn').addEventListener('click', ()=>{
   ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
   colX.slice(1,-1).forEach(x=>{ ctx.beginPath(); ctx.moveTo(x, headerH); ctx.lineTo(x, y); ctx.stroke(); });
 
-  // data rows
+  // data rows — every day, OFF or worked
   ctx.font = '18px -apple-system, sans-serif';
   const start = new Date(weekStartInput.value + 'T00:00:00');
-  workedDays.forEach(day=>{
-    const i = DAYS.indexOf(day);
+  DAYS.forEach((day,i)=>{
     const date = new Date(start); date.setDate(start.getDate()+i);
     const st = dayState[day];
-    const hrs = hoursBetween(st.start, st.end);
+    const hrs = st.off ? 0 : hoursBetween(st.start, st.end);
 
     ctx.textAlign = 'left';
     ctx.fillText(day, colX[0]+12, y+rowH/2);
     ctx.fillText(fmtDate(date), colX[1]+12, y+rowH/2);
     ctx.textAlign = 'right';
-    ctx.fillText(fmtTime12(st.start), colX[3]-12, y+rowH/2);
-    ctx.fillText(fmtTime12(st.end), colX[4]-12, y+rowH/2);
+    ctx.fillText(st.off ? 'OFF' : fmtTime12(st.start), colX[3]-12, y+rowH/2);
+    ctx.fillText(st.off ? 'OFF' : fmtTime12(st.end), colX[4]-12, y+rowH/2);
     ctx.fillText(String(hrs), colX[5]-12, y+rowH/2);
 
     y += rowH;
@@ -581,9 +581,9 @@ document.getElementById('imageBtn').addEventListener('click', ()=>{
   });
 
   // totals rows
-  const weeklyTotal = workedDays.reduce((sum,day)=>{
+  const weeklyTotal = DAYS.reduce((sum,day)=>{
     const st = dayState[day];
-    return sum + hoursBetween(st.start, st.end);
+    return sum + (st.off ? 0 : hoursBetween(st.start, st.end));
   },0);
   const breaks = parseFloat(breaksInput.value)||0;
 
@@ -604,8 +604,6 @@ document.getElementById('imageBtn').addEventListener('click', ()=>{
   canvas.style.display = 'block';
   document.getElementById('imageHint').style.display = 'block';
 
-  // Also try a direct download (works on desktop Safari/Chrome; iOS
-  // Safari will typically just open the image, hence the press-and-hold hint)
   try{
     const link = document.createElement('a');
     link.download = `timesheet-${weekStartInput.value}.png`;
@@ -618,6 +616,7 @@ document.getElementById('imageBtn').addEventListener('click', ()=>{
 (function init(){
   weekStartInput.value = toDateInputValue(getThisSunday());
   updateWeekLabel();
+  DAYS.forEach(day=>{ dayState[day] = {off:false, start:'18:00', end:'06:00'}; });
   buildDayRows();
   loadWeekIfExists(weekStartInput.value).then(buildDayRows);
   loadPastWeeks();
