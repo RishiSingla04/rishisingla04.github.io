@@ -375,7 +375,7 @@ function recalc(){
     const line = daysCard.querySelector(`[data-hoursline="${day}"]`);
     if(line) line.textContent = st.off ? '0 hours' : `${hrs} hours`;
   });
-  const breaks = parseFloat(breaksInput.value) || 0;
+  const breaks = parseFloat(breaksInput.value) || 3;
   document.getElementById('totalWeekly').textContent = round2(weeklyTotal);
   document.getElementById('totalFinal').textContent = round2(weeklyTotal - breaks);
 }
