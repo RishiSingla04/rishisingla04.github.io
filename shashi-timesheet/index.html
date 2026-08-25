@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Time Sheet</title>
+<style>
+  :root{
+    --ink:#1c2430;
+    --paper:#f7f5f0;
+    --card:#ffffff;
+    --line:#dfdcd3;
+    --accent:#2f6f5e;
+    --accent-ink:#ffffff;
+    --muted:#6b7280;
+    --danger:#b5432c;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding:20px 16px 60px;
+    max-width:640px;
+    margin:0 auto;
+    -webkit-tap-highlight-color:transparent;
+  }
+  h1{
+    font-size:1.5rem;
+    margin:4px 0 2px;
+    letter-spacing:-0.01em;
+  }
+  .sub{
+    color:var(--muted);
+    font-size:0.95rem;
+    margin:0 0 20px;
+  }
+  .card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:18px;
+    margin-bottom:16px;
+  }
+  label{
+    display:block;
+    font-weight:600;
+    font-size:0.9rem;
+    margin-bottom:6px;
+  }
+  input[type="date"], input[type="number"]{
+    width:100%;
+    font-size:1.05rem;
+    padding:12px;
+    border:1px solid var(--line);
+    border-radius:10px;
+    background:#fff;
+    color:var(--ink);
+  }
+  .week-label{
+    font-size:1.1rem;
+    font-weight:700;
+    margin-top:10px;
+    color:var(--accent);
+  }
+  .day-row{
+    border-top:1px solid var(--line);
+    padding:14px 0;
+  }
+  .day-row:first-child{border-top:none;padding-top:4px;}
+  .day-top{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:10px;
+  }
+  .day-name{
+    font-weight:700;
+    font-size:1.05rem;
+  }
+  .day-date{
+    color:var(--muted);
+    font-size:0.85rem;
+    font-weight:400;
+  }
+  .switch{
+    position:relative;
+    width:50px;
+    height:30px;
+    flex-shrink:0;
+  }
+  .switch input{opacity:0;width:0;height:0;position:absolute;}
+  .slider{
+    position:absolute;inset:0;
+    background:#d8d5cb;
+    border-radius:999px;
+    transition:.15s;
+    cursor:pointer;
+  }
+  .slider::before{
+    content:"";
+    position:absolute;
+    width:24px;height:24px;
+    left:3px;top:3px;
+    background:#fff;
+    border-radius:50%;
+    transition:.15s;
+    box-shadow:0 1px 3px rgba(0,0,0,.3);
+  }
+  .switch input:checked + .slider{background:var(--accent);}
+  .switch input:checked + .slider::before{transform:translateX(20px);}
+  .times{
+    display:none;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+  }
+  .times.active{display:grid;}
+  .times label{font-size:0.8rem;color:var(--muted);margin-bottom:4px;}
+  input[type="time"]{
+    width:100%;
+    font-size:1.05rem;
+    padding:10px;
+    border:1px solid var(--line);
+    border-radius:10px;
+    background:#fff;
+    color:var(--ink);
+  }
+  .hours-line{
+    grid-column:1 / -1;
+    text-align:right;
+    font-size:0.85rem;
+    color:var(--muted);
+    margin-top:6px;
+  }
+  .totals{
+    display:flex;
+    justify-content:space-between;
+    padding:10px 0;
+    border-top:1px solid var(--line);
+  }
+  .totals:first-of-type{border-top:none;}
+  .totals .val{font-weight:700;}
+  .totals.grand{font-size:1.15rem;}
+  .breaks-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding:10px 0;
+  }
+  .breaks-row input{width:100px;text-align:center;}
+  button{
+    font-family:inherit;
+    font-size:1.05rem;
+    font-weight:700;
+    padding:15px;
+    width:100%;
+    border:none;
+    border-radius:12px;
+    cursor:pointer;
+    -webkit-appearance:none;
+  }
+  .btn-primary{
+    background:var(--accent);
+    color:var(--accent-ink);
+    margin-bottom:10px;
+  }
+  .btn-secondary{
+    background:#fff;
+    color:var(--ink);
+    border:1px solid var(--line);
+    margin-bottom:10px;
+  }
+  .status{
+    text-align:center;
+    font-size:0.9rem;
+    min-height:1.2em;
+    margin-top:4px;
+  }
+  .status.ok{color:var(--accent);}
+  .status.err{color:var(--danger);}
+  .past-week{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:12px 0;
+    border-top:1px solid var(--line);
+    cursor:pointer;
+  }
+  .past-week:first-child{border-top:none;}
+  .past-week span.arrow{color:var(--muted);}
+  .empty{
+    color:var(--muted);
+    font-size:0.9rem;
+    text-align:center;
+    padding:8px 0;
+  }
+  #tableCanvas{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:10px;
+    margin-top:12px;
+    display:none;
+  }
+  .hint{
+    font-size:0.8rem;
+    color:var(--muted);
+    text-align:center;
+    margin-top:8px;
+  }
+</style>
+</head>
+<body>
+
+  <h1>Time Sheet</h1>
+  <p class="sub">Fill in the days you worked, then save. Nothing to type by hand except tapping the time wheels.</p>
+
+  <div class="card">
+    <label for="weekStart">Week starting (Sunday)</label>
+    <input type="date" id="weekStart">
+    <div class="week-label" id="weekLabel"></div>
+  </div>
+
+  <div class="card" id="daysCard"></div>
+
+  <div class="card">
+    <div class="breaks-row">
+      <label style="margin:0;">Breaks this week (hours)</label>
+      <input type="number" id="breaks" min="0" step="0.5" value="0">
+    </div>
+    <div class="totals">
+      <span>Total Weekly Hours</span>
+      <span class="val" id="totalWeekly">0</span>
+    </div>
+    <div class="totals grand">
+      <span>Total</span>
+      <span class="val" id="totalFinal">0</span>
+    </div>
+  </div>
+
+  <button class="btn-primary" id="saveBtn">Save This Week</button>
+  <div class="status" id="status"></div>
+
+  <button class="btn-secondary" id="imageBtn">Download This Week as Image</button>
+  <canvas id="tableCanvas" width="1200" height="600"></canvas>
+  <p class="hint" id="imageHint" style="display:none;">Press and hold the image above, then choose "Save to Photos".</p>
+
+  <div class="card">
+    <label style="margin-bottom:12px;">Past Weeks</label>
+    <div id="pastWeeks"><div class="empty">Loading…</div></div>
+  </div>
+
+<script>
+/* ======================================================
+   1. PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE
+   (see Code.gs setup instructions — it ends in /exec)
+   ====================================================== */
+const API_URL = "PASTE_YOUR_APPS_SCRIPT_URL_HERE";
+
+const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+const daysCard = document.getElementById('daysCard');
+const weekStartInput = document.getElementById('weekStart');
+const weekLabelEl = document.getElementById('weekLabel');
+const breaksInput = document.getElementById('breaks');
+const statusEl = document.getElementById('status');
+const pastWeeksEl = document.getElementById('pastWeeks');
+
+let dayState = {}; // { Sunday: {worked, start, end}, ... }
+
+function toDateInputValue(d){
+  const off = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - off*60000);
+  return local.toISOString().slice(0,10);
+}
+
+function getThisSunday(){
+  const d = new Date();
+  const day = d.getDay();
+  d.setDate(d.getDate() - day);
+  return d;
+}
+
+function fmtDate(d){
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
+function fmtTime12(hhmm){
+  if(!hhmm) return '';
+  const [h,m] = hhmm.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  let h12 = h % 12; if(h12===0) h12 = 12;
+  return `${h12}:${String(m).padStart(2,'0')} ${period}`;
+}
+
+function hoursBetween(start,end){
+  if(!start || !end) return 0;
+  const [sh,sm] = start.split(':').map(Number);
+  const [eh,em] = end.split(':').map(Number);
+  let mins = (eh*60+em) - (sh*60+sm);
+  if(mins <= 0) mins += 24*60; // overnight shift
+  return Math.round((mins/60)*100)/100;
+}
+
+function buildDayRows(){
+  daysCard.innerHTML = '';
+  const start = new Date(weekStartInput.value + 'T00:00:00');
+  DAYS.forEach((day,i) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + i);
+
+    if(!dayState[day]) dayState[day] = {worked:false, start:'18:00', end:'06:00'};
+    const st = dayState[day];
+
+    const row = document.createElement('div');
+    row.className = 'day-row';
+    row.innerHTML = `
+      <div class="day-top">
+        <div>
+          <span class="day-name">${day}</span><br>
+          <span class="day-date">${fmtDate(date)}</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" data-day="${day}" class="worked-toggle" ${st.worked ? 'checked':''}>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="times ${st.worked ? 'active':''}" data-times="${day}">
+        <div>
+          <label>Start time</label>
+          <input type="time" class="start-input" data-day="${day}" value="${st.start}">
+        </div>
+        <div>
+          <label>End time</label>
+          <input type="time" class="end-input" data-day="${day}" value="${st.end}">
+        </div>
+        <div class="hours-line" data-hoursline="${day}">0 hours</div>
+      </div>
+    `;
+    daysCard.appendChild(row);
+  });
+
+  daysCard.querySelectorAll('.worked-toggle').forEach(el=>{
+    el.addEventListener('change', e=>{
+      const day = e.target.dataset.day;
+      dayState[day].worked = e.target.checked;
+      daysCard.querySelector(`[data-times="${day}"]`).classList.toggle('active', e.target.checked);
+      recalc();
+    });
+  });
+  daysCard.querySelectorAll('.start-input').forEach(el=>{
+    el.addEventListener('change', e=>{ dayState[e.target.dataset.day].start = e.target.value; recalc(); });
+  });
+  daysCard.querySelectorAll('.end-input').forEach(el=>{
+    el.addEventListener('change', e=>{ dayState[e.target.dataset.day].end = e.target.value; recalc(); });
+  });
+
+  recalc();
+}
+
+function recalc(){
+  let weeklyTotal = 0;
+  DAYS.forEach(day=>{
+    const st = dayState[day];
+    const hrs = st.worked ? hoursBetween(st.start, st.end) : 0;
+    weeklyTotal += hrs;
+    const line = daysCard.querySelector(`[data-hoursline="${day}"]`);
+    if(line) line.textContent = `${hrs} hours`;
+  });
+  const breaks = parseFloat(breaksInput.value) || 0;
+  document.getElementById('totalWeekly').textContent = round2(weeklyTotal);
+  document.getElementById('totalFinal').textContent = round2(weeklyTotal - breaks);
+}
+
+function round2(n){ return Math.round(n*100)/100; }
+
+function updateWeekLabel(){
+  const start = new Date(weekStartInput.value + 'T00:00:00');
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  weekLabelEl.textContent = `Week: ${MONTHS[start.getMonth()]} ${start.getDate()} - ${MONTHS[end.getMonth()]} ${end.getDate()}`;
+}
+
+weekStartInput.addEventListener('change', ()=>{
+  updateWeekLabel();
+  loadWeekIfExists(weekStartInput.value);
+  buildDayRows();
+});
+breaksInput.addEventListener('input', recalc);
+
+// ---------- Save ----------
+document.getElementById('saveBtn').addEventListener('click', async ()=>{
+  if(!API_URL || API_URL.indexOf('PASTE_YOUR') === 0){
+    statusEl.textContent = 'Setup needed: paste your Apps Script URL into the API_URL line in this file.';
+    statusEl.className = 'status err';
+    return;
+  }
+  statusEl.textContent = 'Saving…';
+  statusEl.className = 'status';
+
+  const start = new Date(weekStartInput.value + 'T00:00:00');
+  const payload = { 'Week Start': weekStartInput.value, 'Week Label': weekLabelEl.textContent };
+  let weeklyTotal = 0;
+
+  DAYS.forEach((day,i)=>{
+    const date = new Date(start); date.setDate(start.getDate()+i);
+    const st = dayState[day];
+    const hrs = st.worked ? hoursBetween(st.start, st.end) : 0;
+    weeklyTotal += hrs;
+    payload[day+' Date'] = fmtDate(date);
+    payload[day+' Start'] = st.worked ? fmtTime12(st.start) : '';
+    payload[day+' End'] = st.worked ? fmtTime12(st.end) : '';
+    payload[day+' Hours'] = st.worked ? hrs : '';
+  });
+
+  const breaks = parseFloat(breaksInput.value) || 0;
+  payload['Total Weekly Hours'] = round2(weeklyTotal);
+  payload['Breaks'] = breaks;
+  payload['Total'] = round2(weeklyTotal - breaks);
+
+  try{
+    await fetch(API_URL, {
+      method:'POST',
+      body: JSON.stringify(payload),
+      headers: {'Content-Type':'text/plain;charset=utf-8'} // avoids CORS preflight on Apps Script
+    });
+    statusEl.textContent = 'Saved.';
+    statusEl.className = 'status ok';
+    loadPastWeeks();
+  }catch(err){
+    statusEl.textContent = 'Could not save — check your internet connection and try again.';
+    statusEl.className = 'status err';
+  }
+});
+
+// ---------- Load an existing week ----------
+async function fetchAllWeeks(){
+  if(!API_URL || API_URL.indexOf('PASTE_YOUR') === 0) return [];
+  try{
+    const res = await fetch(API_URL);
+    const json = await res.json();
+    return json.weeks || [];
+  }catch(err){
+    return [];
+  }
+}
+
+function parseTimeTo24(t){
+  if(!t) return '';
+  const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if(!m) return '';
+  let h = parseInt(m[1],10);
+  const min = m[2];
+  const period = m[3].toUpperCase();
+  if(period==='PM' && h!==12) h += 12;
+  if(period==='AM' && h===12) h = 0;
+  return `${String(h).padStart(2,'0')}:${min}`;
+}
+
+async function loadWeekIfExists(weekStartVal){
+  const weeks = await fetchAllWeeks();
+  const match = weeks.find(w => {
+    const ws = w['Week Start'];
+    if(ws instanceof Object && ws.toISOString){ return toDateInputValue(new Date(ws)) === weekStartVal; }
+    return String(ws).slice(0,10) === weekStartVal;
+  });
+  dayState = {};
+  if(match){
+    DAYS.forEach(day=>{
+      const start24 = parseTimeTo24(match[day+' Start']);
+      const end24 = parseTimeTo24(match[day+' End']);
+      dayState[day] = {
+        worked: !!match[day+' Hours'],
+        start: start24 || '18:00',
+        end: end24 || '06:00'
+      };
+    });
+    breaksInput.value = match['Breaks'] || 0;
+  } else {
+    breaksInput.value = 0;
+  }
+}
+
+// ---------- Past weeks list ----------
+async function loadPastWeeks(){
+  const weeks = await fetchAllWeeks();
+  if(!weeks.length){
+    pastWeeksEl.innerHTML = '<div class="empty">No weeks saved yet.</div>';
+    return;
+  }
+  weeks.sort((a,b)=> String(b['Week Start']).localeCompare(String(a['Week Start'])));
+  pastWeeksEl.innerHTML = '';
+  weeks.forEach(w=>{
+    const div = document.createElement('div');
+    div.className = 'past-week';
+    div.innerHTML = `<span>${w['Week Label'] || w['Week Start']}</span><span>Total: ${w['Total']||0}h &nbsp; <span class="arrow">›</span></span>`;
+    div.addEventListener('click', ()=>{
+      let wsVal = w['Week Start'];
+      wsVal = (wsVal instanceof Object && wsVal.toISOString) ? toDateInputValue(new Date(wsVal)) : String(wsVal).slice(0,10);
+      weekStartInput.value = wsVal;
+      updateWeekLabel();
+      loadWeekIfExists(wsVal).then(buildDayRows);
+      window.scrollTo({top:0, behavior:'smooth'});
+    });
+    pastWeeksEl.appendChild(div);
+  });
+}
+
+// ---------- Image export (matches the printed table style) ----------
+document.getElementById('imageBtn').addEventListener('click', ()=>{
+  const canvas = document.getElementById('tableCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  const workedDays = DAYS.filter(d => dayState[d] && dayState[d].worked);
+  const rowCount = workedDays.length;
+  const headerH = 50, colHeadH = 44, rowH = 40, totalsH = 40;
+  const neededH = headerH + colHeadH + rowH*rowCount + totalsH*3 + 20;
+  canvas.height = Math.max(neededH, 300);
+
+  ctx.clearRect(0,0,W,canvas.height);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0,0,W,canvas.height);
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 2;
+  ctx.textBaseline = 'middle';
+
+  const cols = [
+    {label:'Day', w:0.22},
+    {label:'Date', w:0.26},
+    {label:'Start Time', w:0.19},
+    {label:'End time', w:0.19},
+    {label:'Hours Per Day', w:0.14}
+  ];
+  let colX = [0];
+  cols.forEach(c => colX.push(colX[colX.length-1] + c.w*W));
+
+  let y = 0;
+  // outer border + title
+  ctx.strokeRect(0,0,W, canvas.height-1);
+  ctx.font = 'bold 24px -apple-system, sans-serif';
+  ctx.fillStyle = '#000';
+  ctx.textAlign = 'center';
+  ctx.fillText(weekLabelEl.textContent, W/2, y + headerH/2);
+  y += headerH;
+  ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+
+  // column headers
+  ctx.font = 'bold 19px -apple-system, sans-serif';
+  ctx.textAlign = 'left';
+  cols.forEach((c,i)=>{
+    ctx.fillText(c.label, colX[i]+12, y + colHeadH/2);
+  });
+  y += colHeadH;
+  ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+  colX.slice(1,-1).forEach(x=>{ ctx.beginPath(); ctx.moveTo(x, headerH); ctx.lineTo(x, y); ctx.stroke(); });
+
+  // data rows
+  ctx.font = '18px -apple-system, sans-serif';
+  const start = new Date(weekStartInput.value + 'T00:00:00');
+  workedDays.forEach(day=>{
+    const i = DAYS.indexOf(day);
+    const date = new Date(start); date.setDate(start.getDate()+i);
+    const st = dayState[day];
+    const hrs = hoursBetween(st.start, st.end);
+
+    ctx.textAlign = 'left';
+    ctx.fillText(day, colX[0]+12, y+rowH/2);
+    ctx.fillText(fmtDate(date), colX[1]+12, y+rowH/2);
+    ctx.textAlign = 'right';
+    ctx.fillText(fmtTime12(st.start), colX[3]-12, y+rowH/2);
+    ctx.fillText(fmtTime12(st.end), colX[4]-12, y+rowH/2);
+    ctx.fillText(String(hrs), colX[5]-12, y+rowH/2);
+
+    y += rowH;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    colX.slice(1,-1).forEach(x=>{ ctx.beginPath(); ctx.moveTo(x, y-rowH); ctx.lineTo(x, y); ctx.stroke(); });
+  });
+
+  // totals rows
+  const weeklyTotal = workedDays.reduce((sum,day)=>{
+    const st = dayState[day];
+    return sum + hoursBetween(st.start, st.end);
+  },0);
+  const breaks = parseFloat(breaksInput.value)||0;
+
+  function totalsRow(label, value, bold){
+    ctx.font = (bold?'bold ':'') + '19px -apple-system, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(label, 12, y+totalsH/2);
+    ctx.textAlign = 'right';
+    ctx.fillText(String(value), W-12, y+totalsH/2);
+    y += totalsH;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+  }
+  ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+  totalsRow('Total Weekly Hours', round2(weeklyTotal), true);
+  totalsRow('Breaks', breaks, true);
+  totalsRow('Total', round2(weeklyTotal-breaks), true);
+
+  canvas.style.display = 'block';
+  document.getElementById('imageHint').style.display = 'block';
+
+  // Also try a direct download (works on desktop Safari/Chrome; iOS
+  // Safari will typically just open the image, hence the press-and-hold hint)
+  try{
+    const link = document.createElement('a');
+    link.download = `timesheet-${weekStartInput.value}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }catch(e){ /* ignore — the visible canvas + hint still lets them save it */ }
+});
+
+// ---------- Init ----------
+(function init(){
+  weekStartInput.value = toDateInputValue(getThisSunday());
+  updateWeekLabel();
+  buildDayRows();
+  loadWeekIfExists(weekStartInput.value).then(buildDayRows);
+  loadPastWeeks();
+})();
+</script>
+</body>
+</html>
