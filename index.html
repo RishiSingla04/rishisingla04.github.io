@@ -691,10 +691,9 @@ document.getElementById('restock-submit').addEventListener('click', async () => 
   const btn = document.getElementById('restock-submit');
   btn.disabled = true;
   try {
-    const unitCost = totalCost / quantity;
     const result = mode === 'existing'
-      ? await restockProduct(productId, unitCost, quantity)
-      : await addNewProduct(name, unitCost, quantity);
+      ? await restockProduct(productId, totalCost, quantity)
+      : await addNewProduct(name, totalCost / quantity, quantity);
     toast(result === 'restocked' ? `Restocked ${resultName(productId)}` : `Added ${name}`);
     document.getElementById('restock-name').value = '';
     document.getElementById('restock-cost').value = '';
@@ -712,14 +711,14 @@ function resultName(productId) {
   return product ? product.name : 'product';
 }
 
-function restockProduct(productId, cost, quantity) {
+function restockProduct(productId, batchTotalCost, quantity) {
   const ref = db.collection('products').doc(productId);
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) throw new Error('Product not found');
     const existing = snap.data();
     const totalQuantity = existing.quantity + quantity;
-    const totalCost = (existing.cost * existing.quantity) + (cost * quantity);
+    const totalCost = (existing.cost * existing.quantity) + batchTotalCost;
     tx.update(ref, { cost: totalCost / totalQuantity, quantity: totalQuantity });
     return 'restocked';
   });
