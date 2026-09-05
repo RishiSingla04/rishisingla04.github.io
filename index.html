@@ -548,7 +548,21 @@ function renderDashboard() {
 
 function renderTotals() {
   const totalRevenue = STATE.sales.reduce((s, x) => s + Number(x.revenue || 0), 0);
-  const totalCost = STATE.restocks.reduce((s, x) => s + Number(x.totalCost || 0), 0);
+  const recordedCostByProduct = STATE.restocks.reduce((costs, restock) => {
+    costs[restock.productId] = (costs[restock.productId] || 0) + Number(restock.totalCost || 0);
+    return costs;
+  }, {});
+  const soldByProduct = STATE.sales.reduce((quantities, sale) => {
+    quantities[sale.productId] = (quantities[sale.productId] || 0) + Number(sale.quantity || 0);
+    return quantities;
+  }, {});
+  const totalCost = STATE.products.reduce((total, product) => {
+    const recordedCost = recordedCostByProduct[product.id] || 0;
+    const purchasedQuantity = Number(product.quantity || 0) + (soldByProduct[product.id] || 0);
+    const historicalCost = Number(product.cost || 0) * purchasedQuantity;
+    const missingHistoricalCost = Math.max(0, historicalCost - recordedCost);
+    return total + recordedCost + missingHistoricalCost;
+  }, 0);
   document.getElementById('total-revenue').textContent = money(totalRevenue);
   document.getElementById('total-cost').textContent = money(totalCost);
 }
