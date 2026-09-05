@@ -245,6 +245,23 @@
       </div>
     </section>
 
+    <!-- Totals -->
+    <section class="view" id="view-totals">
+      <div class="card">
+        <h3 style="margin-top:0;">Totals to date</h3>
+        <div class="stat-grid">
+          <div class="stat-box">
+            <span class="label">Total revenue</span>
+            <div class="value mono" id="total-revenue">$0.00</div>
+          </div>
+          <div class="stat-box">
+            <span class="label">Total cost</span>
+            <div class="value mono" id="total-cost">$0.00</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Sell -->
     <section class="view" id="view-sell">
       <div class="card">
@@ -312,6 +329,7 @@
     <button data-view="sell"><span class="glyph">＄</span>Sell</button>
     <button data-view="restock"><span class="glyph">＋</span>Restock</button>
     <button data-view="history"><span class="glyph">≣</span>History</button>
+    <button data-view="totals"><span class="glyph">∑</span>Totals</button>
   </nav>
 
   <div class="toast" id="toast"></div>
@@ -352,9 +370,9 @@ try { firebaseConfig = JSON.parse(localStorage.getItem(LS_CONFIG) || 'null'); } 
 let PASSCODE = localStorage.getItem(LS_PASS) || '';
 
 let auth, db;
-let STATE = { products: [], sales: [] };
+let STATE = { products: [], sales: [], restocks: [] };
 let chart;
-let unsubProducts, unsubSales;
+let unsubProducts, unsubSales, unsubRestocks;
 
 function ensureFirebase() {
   if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
@@ -470,6 +488,7 @@ document.getElementById('view-dashboard').classList.add('active');
 function startListening() {
   if (unsubProducts) unsubProducts();
   if (unsubSales) unsubSales();
+  if (unsubRestocks) unsubRestocks();
 
   unsubProducts = db.collection('products').onSnapshot((snap) => {
     STATE.products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -486,6 +505,12 @@ function startListening() {
     });
     renderDashboard();
     renderHistory();
+    renderTotals();
+  }, (err) => toast(err.message, true));
+
+  unsubRestocks = db.collection('restocks').onSnapshot((snap) => {
+    STATE.restocks = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderTotals();
   }, (err) => toast(err.message, true));
 }
 
@@ -519,6 +544,13 @@ function renderDashboard() {
   });
 
   renderChart();
+}
+
+function renderTotals() {
+  const totalRevenue = STATE.sales.reduce((s, x) => s + Number(x.revenue || 0), 0);
+  const totalCost = STATE.restocks.reduce((s, x) => s + Number(x.totalCost || 0), 0);
+  document.getElementById('total-revenue').textContent = money(totalRevenue);
+  document.getElementById('total-cost').textContent = money(totalCost);
 }
 
 function renderChart() {
@@ -713,6 +745,7 @@ function resultName(productId) {
 
 function restockProduct(productId, batchTotalCost, quantity) {
   const ref = db.collection('products').doc(productId);
+  const restockRef = db.collection('restocks').doc();
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) throw new Error('Product not found');
@@ -720,6 +753,13 @@ function restockProduct(productId, batchTotalCost, quantity) {
     const totalQuantity = existing.quantity + quantity;
     const totalCost = (existing.cost * existing.quantity) + batchTotalCost;
     tx.update(ref, { cost: totalCost / totalQuantity, quantity: totalQuantity });
+    tx.set(restockRef, {
+      productId,
+      productName: existing.name,
+      quantity,
+      totalCost: batchTotalCost,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+    });
     return 'restocked';
   });
 }
@@ -727,12 +767,20 @@ function restockProduct(productId, batchTotalCost, quantity) {
 function addNewProduct(name, cost, quantity) {
   const id = slugify(name);
   const ref = db.collection('products').doc(id);
+  const restockRef = db.collection('restocks').doc();
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (snap.exists) {
       throw new Error('A product with that name already exists. Select it from the existing products list.');
     }
     tx.set(ref, { name, cost, quantity });
+    tx.set(restockRef, {
+      productId: id,
+      productName: name,
+      quantity,
+      totalCost: cost * quantity,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+    });
     return 'added';
   });
 }
