@@ -718,7 +718,9 @@ function restockProduct(productId, cost, quantity) {
     const snap = await tx.get(ref);
     if (!snap.exists) throw new Error('Product not found');
     const existing = snap.data();
-    tx.update(ref, { cost, quantity: existing.quantity + quantity });
+    const totalQuantity = existing.quantity + quantity;
+    const totalCost = (existing.cost * existing.quantity) + (cost * quantity);
+    tx.update(ref, { cost: totalCost / totalQuantity, quantity: totalQuantity });
     return 'restocked';
   });
 }
