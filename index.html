@@ -271,9 +271,15 @@
         </div>
         <div class="stat-grid">
           <div class="stat-box">
+            <span class="label">Inventory sold (cost)</span>
+            <div class="value mono" id="total-inventory-sold">$0.00</div>
+          </div>
+          <div class="stat-box">
             <span class="label">Gross profit</span>
             <div class="value mono" id="total-profit">$0.00</div>
           </div>
+        </div>
+        <div class="stat-grid">
           <div class="stat-box">
             <span class="label">Inventory value left</span>
             <div class="value mono" id="total-inventory-value">$0.00</div>
@@ -570,6 +576,10 @@ function renderTotals() {
   const totalUnitsSold = STATE.sales.reduce((s, x) => s + Number(x.quantity || 0), 0);
   const totalUnitsLeft = STATE.products.reduce((s, x) => s + Number(x.quantity || 0), 0);
   const totalRevenue = STATE.sales.reduce((s, x) => s + Number(x.revenue || 0), 0);
+  const totalInventorySold = STATE.sales.reduce((s, x) => {
+    const costPerUnit = Number(x.costPerUnit || 0);
+    return s + (costPerUnit * Number(x.quantity || 0));
+  }, 0);
   const totalProfit = STATE.sales.reduce((s, x) => s + Number(x.profit || 0), 0);
   const totalInventoryValue = STATE.products.reduce((s, x) => s + (Number(x.cost || 0) * Number(x.quantity || 0)), 0);
   const recordedCostByProduct = STATE.restocks.reduce((costs, restock) => {
@@ -591,6 +601,7 @@ function renderTotals() {
   document.getElementById('total-units-left').textContent = totalUnitsLeft;
   document.getElementById('total-revenue').textContent = money(totalRevenue);
   document.getElementById('total-cost').textContent = money(totalCost);
+  document.getElementById('total-inventory-sold').textContent = money(totalInventorySold);
   document.getElementById('total-profit').textContent = money(totalProfit);
   document.getElementById('total-inventory-value').textContent = money(totalInventoryValue);
 }
