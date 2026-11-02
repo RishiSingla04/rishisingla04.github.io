@@ -89,6 +89,7 @@
     font-weight:400;
   }
   .off-btn{
+    width:auto;
     flex-shrink:0;
     font-family:inherit;
     font-weight:700;
@@ -214,6 +215,10 @@
     text-align:center;
     margin-top:8px;
   }
+  @media (max-width:360px){
+    .times{grid-template-columns:1fr;}
+    .time-field,input[type="time"]{min-width:0;}
+  }
 </style>
 </head>
 <body>
@@ -277,6 +282,7 @@ const statusEl = document.getElementById('status');
 const pastWeeksEl = document.getElementById('pastWeeks');
 
 let dayState = {}; // { Sunday: {off, start, end}, ... }
+let breakBase = 3;
 
 function toDateInputValue(d){
   const off = d.getTimezoneOffset();
@@ -352,6 +358,7 @@ function buildDayRows(){
     el.addEventListener('click', e=>{
       const day = e.target.dataset.day;
       dayState[day].off = !dayState[day].off;
+      updateBreaksForOffDays();
       buildDayRows();
       recalc();
     });
@@ -387,6 +394,17 @@ function getBreaks(){
   return Number.isFinite(breaks) ? breaks : 3;
 }
 
+function updateBreaksForOffDays(){
+  const offDays = DAYS.filter(day=>dayState[day].off).length;
+  breaksInput.value = Math.max(0, breakBase - offDays * 0.5);
+}
+
+function updateBreakBaseFromInput(){
+  const offDays = DAYS.filter(day=>dayState[day].off).length;
+  breakBase = getBreaks() + offDays * 0.5;
+  recalc();
+}
+
 function updateWeekLabel(){
   const start = new Date(weekStartInput.value + 'T00:00:00');
   const end = new Date(start);
@@ -398,7 +416,7 @@ weekStartInput.addEventListener('change', ()=>{
   updateWeekLabel();
   loadWeekIfExists(weekStartInput.value).then(buildDayRows);
 });
-breaksInput.addEventListener('input', recalc);
+breaksInput.addEventListener('input', updateBreakBaseFromInput);
 
 // ---------- Save ----------
 document.getElementById('saveBtn').addEventListener('click', async ()=>{
@@ -491,9 +509,11 @@ async function loadWeekIfExists(weekStartVal){
       };
     });
     breaksInput.value = match.breaks ?? 3;
+    breakBase = getBreaks() + DAYS.filter(day=>dayState[day].off).length * 0.5;
   } else {
     DAYS.forEach(day=>{ dayState[day] = {off:false, start:'18:00', end:'06:00'}; });
     breaksInput.value = 3;
+    breakBase = 3;
   }
 }
 
