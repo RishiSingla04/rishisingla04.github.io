@@ -85,10 +85,23 @@ accounts to create.
 - **Restock**: adding a product whose name already exists (matched case-
   insensitively) adds to its existing stock instead of creating a duplicate, and
   updates its cost-per-unit to whatever you just entered.
-- **Sell**: pick a product, enter sale price and quantity. Oversells are blocked —
-  checked in the app immediately, and re-checked inside a Firestore transaction at
-  write time, so two people can't both sell the same last unit even if they tap
-  "Record sale" at the same instant.
+- **Sell**: pick a product, enter sale price and quantity, and split the payment
+  between cash and bank. The two payment amounts must equal the sale price.
+  Oversells are blocked — checked in the app immediately, and re-checked inside a
+  Firestore transaction at write time, so two people can't both sell the same last
+  unit even if they tap "Record sale" at the same instant.
+- **Funds**: view current cash and bank balances, enter your starting balances
+  once, and record transfers in either direction. Transfers move money between balances
+  and do not count as additional sales. Recorded sale payments and transfers update
+  balances together in Firestore transactions. Spending from cash or bank is not
+  tracked yet, so record only the amounts still held if you set a starting balance.
+- The first time the updated app opens, existing sales without a payment split are
+  assigned to cash automatically, and their totals are added to the cash balance.
+  This migration is safe to retry and does not re-add sales already assigned. Enter
+  only starting balances not already represented by those sales; record any older
+  deposits as cash-to-bank transfers. Existing spending is not automatically
+  deducted, so the resulting balance may need adjustment to match the actual cash
+  you still hold.
 - **Dashboard & History** update live for everyone, in real time, without needing
   to refresh — Firestore pushes changes to every connected device.
 - **CSV export**: one tap in History, opens in Excel/Numbers/Sheets.

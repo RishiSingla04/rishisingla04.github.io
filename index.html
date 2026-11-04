@@ -98,6 +98,8 @@
   .stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px; }
   .stat-box{ background:var(--surface); border:1px solid var(--divider); border-radius:var(--radius); padding:14px; }
   .stat-box .value{ font-size:19px; font-weight:600; }
+  .balance-box{ background:var(--accent-soft); border:1px solid var(--divider); border-radius:var(--radius); padding:16px; }
+  .balance-box .value{ font-size:23px; font-weight:600; }
 
   table{ width:100%; border-collapse:collapse; font-size:14px; }
   thead th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); padding:0 6px 8px; font-weight:600; }
@@ -300,8 +302,58 @@
         <label class="label" for="sell-qty">Quantity sold</label>
         <input id="sell-qty" type="number" inputmode="numeric" min="1" step="1" placeholder="1">
         <div class="hint" id="sell-unit-price-hint">Per-unit sale price: $0.00</div>
+        <label class="label" for="sell-cash">Payment received in cash</label>
+        <input id="sell-cash" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
+        <label class="label" for="sell-bank">Payment received in bank</label>
+        <input id="sell-bank" type="number" inputmode="decimal" step="0.01" min="0" value="0" placeholder="0.00">
+        <div class="hint" id="sell-payment-hint">Cash and bank amounts must add up to the total sale price.</div>
         <div class="error-text" id="sell-error" style="display:none;"></div>
         <button class="primary" id="sell-submit">Record sale</button>
+      </div>
+    </section>
+
+    <!-- Cash & bank -->
+    <section class="view" id="view-funds">
+      <div class="stat-grid">
+        <div class="balance-box">
+          <span class="label">Cash on hand</span>
+          <div class="value mono" id="cash-balance">$0.00</div>
+        </div>
+        <div class="balance-box">
+          <span class="label">In bank</span>
+          <div class="value mono" id="bank-balance">$0.00</div>
+        </div>
+      </div>
+      <div class="card" id="opening-balances-card">
+        <h3 style="margin-top:0;">Starting balances</h3>
+        <p class="hint" style="margin-top:0;">Older untracked sales are automatically added to cash once. Enter only starting amounts not already included in those sales; record any deposits of older proceeds as transfers.</p>
+        <label class="label" for="opening-cash">Cash on hand</label>
+        <input id="opening-cash" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
+        <label class="label" for="opening-bank">In bank</label>
+        <input id="opening-bank" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
+        <div class="error-text" id="opening-error" style="display:none;"></div>
+        <button class="primary" id="opening-submit">Save starting balances</button>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0;">Move money between accounts</h3>
+        <p class="hint" style="margin-top:0;">Transfers move money you already have and do not count as additional sales. Spending from either balance is not tracked here.</p>
+        <label class="label" for="transfer-direction">Transfer direction</label>
+        <select id="transfer-direction">
+          <option value="toBank">Cash to bank (deposit)</option>
+          <option value="toCash">Bank to cash (withdrawal)</option>
+        </select>
+        <label class="label" for="deposit-amount">Amount deposited</label>
+        <input id="deposit-amount" type="number" inputmode="decimal" step="0.01" min="0.01" placeholder="0.00">
+        <div class="error-text" id="transfer-error" style="display:none;"></div>
+        <button class="primary" id="transfer-submit">Record deposit</button>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0;">Recent transfers</h3>
+        <table id="deposits-table">
+          <thead><tr><th>Date</th><th>Transfer</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty" id="deposits-empty" style="display:none;">No transfers recorded yet.</div>
       </div>
     </section>
 
@@ -355,6 +407,7 @@
     <button data-view="sell"><span class="glyph">＄</span>Sell</button>
     <button data-view="restock"><span class="glyph">＋</span>Restock</button>
     <button data-view="history"><span class="glyph">≣</span>History</button>
+    <button data-view="funds"><span class="glyph">$</span>Funds</button>
     <button data-view="totals"><span class="glyph">∑</span>Totals</button>
   </nav>
 
@@ -369,6 +422,14 @@
       <label class="label" for="edit-sale-qty">Quantity sold</label>
       <input id="edit-sale-qty" type="number" inputmode="numeric" min="1" step="1" required>
       <div class="hint" id="edit-sale-unit-price">Per-unit sale price: $0.00</div>
+      <div id="edit-sale-payment-fields">
+        <label class="label" for="edit-sale-cash">Payment received in cash</label>
+        <input id="edit-sale-cash" type="number" inputmode="decimal" step="0.01" min="0">
+        <label class="label" for="edit-sale-bank">Payment received in bank</label>
+        <input id="edit-sale-bank" type="number" inputmode="decimal" step="0.01" min="0">
+        <div class="hint" id="edit-sale-payment-hint">Cash and bank amounts must add up to the total sale price.</div>
+      </div>
+      <div class="hint" id="edit-sale-untracked" style="display:none;">This older sale has no payment allocation; editing it won't change cash or bank balances.</div>
       <div class="error-text" id="edit-sale-error" style="display:none;"></div>
       <div class="dialog-actions">
         <button type="button" class="secondary" id="edit-sale-cancel">Cancel</button>
@@ -396,9 +457,10 @@ try { firebaseConfig = JSON.parse(localStorage.getItem(LS_CONFIG) || 'null'); } 
 let PASSCODE = localStorage.getItem(LS_PASS) || '';
 
 let auth, db;
-let STATE = { products: [], sales: [], restocks: [] };
+let STATE = { products: [], sales: [], restocks: [], cashTransfers: [], cashBalances: null };
 let chart;
-let unsubProducts, unsubSales, unsubRestocks;
+let unsubProducts, unsubSales, unsubRestocks, unsubCashTransfers, unsubCashBalances;
+let legacySalesMigration;
 
 function ensureFirebase() {
   if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
@@ -506,6 +568,7 @@ document.querySelectorAll('nav.tabbar button').forEach((btn) => {
     // Ensure lists are up-to-date when switching tabs
     if (btn.dataset.view === 'sell') renderSellForm();
     if (btn.dataset.view === 'restock') renderRestockList();
+    if (btn.dataset.view === 'funds') renderFunds();
   });
 });
 document.getElementById('view-dashboard').classList.add('active');
@@ -515,6 +578,8 @@ function startListening() {
   if (unsubProducts) unsubProducts();
   if (unsubSales) unsubSales();
   if (unsubRestocks) unsubRestocks();
+  if (unsubCashTransfers) unsubCashTransfers();
+  if (unsubCashBalances) unsubCashBalances();
 
   unsubProducts = db.collection('products').onSnapshot((snap) => {
     STATE.products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -532,15 +597,83 @@ function startListening() {
     renderDashboard();
     renderHistory();
     renderTotals();
+    renderFunds();
   }, (err) => toast(err.message, true));
 
   unsubRestocks = db.collection('restocks').onSnapshot((snap) => {
     STATE.restocks = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     renderTotals();
   }, (err) => toast(err.message, true));
+
+  unsubCashTransfers = db.collection('cashTransfers').orderBy('timestamp', 'desc').limit(20).onSnapshot((snap) => {
+    STATE.cashTransfers = snap.docs.map((d) => {
+      const v = d.data();
+      return { id: d.id, ...v, timestamp: v.timestamp ? v.timestamp.toDate() : new Date() };
+    });
+    renderFunds();
+  }, (err) => toast(err.message, true));
+
+  unsubCashBalances = db.collection('cashBank').doc('balances').onSnapshot((snap) => {
+    STATE.cashBalances = snap.exists ? snap.data() : null;
+    renderFunds();
+  }, (err) => toast(err.message, true));
+
+  migrateLegacySalesToCash().catch((err) => toast(`Could not assign older sales to cash: ${err.message}`, true));
+}
+
+function migrateLegacySalesToCash() {
+  if (legacySalesMigration) return legacySalesMigration;
+  legacySalesMigration = (async () => {
+    const balancesRef = db.collection('cashBank').doc('balances');
+    const balancesSnap = await balancesRef.get();
+    if (balancesSnap.exists && balancesSnap.data().legacySalesAssignedToCash) return;
+
+    const salesSnap = await db.collection('sales').get();
+    let migratedCount = 0;
+    for (const saleDoc of salesSnap.docs) {
+      const saleRef = db.collection('sales').doc(saleDoc.id);
+      const migrated = await db.runTransaction(async (tx) => {
+        const saleSnap = await tx.get(saleRef);
+        const currentBalancesSnap = await tx.get(balancesRef);
+        if (!saleSnap.exists) return false;
+        const sale = saleSnap.data();
+        if (sale.cashAmount != null || sale.bankAmount != null) return false;
+
+        const revenue = Number(sale.saleTotal ?? sale.revenue);
+        if (!Number.isFinite(revenue) || revenue < 0) {
+          throw new Error(`Sale ${saleDoc.id} has an invalid total and was not migrated.`);
+        }
+        const cashCents = toCents(revenue);
+        const balances = currentBalancesSnap.exists ? currentBalancesSnap.data() : {};
+        tx.set(balancesRef, {
+          cashCents: Number(balances.cashCents || 0) + cashCents,
+          bankCents: Number(balances.bankCents || 0),
+        }, { merge: true });
+        tx.update(saleRef, { cashAmount: cashCents / 100, bankAmount: 0 });
+        return true;
+      });
+      if (migrated) migratedCount += 1;
+    }
+
+    await db.runTransaction(async (tx) => {
+      const currentBalancesSnap = await tx.get(balancesRef);
+      const balances = currentBalancesSnap.exists ? currentBalancesSnap.data() : {};
+      if (!balances.legacySalesAssignedToCash) {
+        tx.set(balancesRef, { legacySalesAssignedToCash: true }, { merge: true });
+      }
+    });
+    if (migratedCount) toast(`Assigned ${migratedCount} older sale(s) to cash`);
+  })().catch((err) => {
+    legacySalesMigration = null;
+    throw err;
+  });
+  return legacySalesMigration;
 }
 
 function money(n) { return '$' + Number(n || 0).toFixed(2); }
+function toCents(amount) { return Math.round(Number(amount) * 100); }
+function validAmount(amount) { return Number.isFinite(Number(amount)) && Number(amount) >= 0; }
+function balanceCents(field) { return Number(STATE.cashBalances?.[field] || 0); }
 function slugify(name) {
   const s = String(name).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-+|-+$)/g, '');
   return s || 'p-' + encodeURIComponent(name).replace(/%/g, '');
@@ -605,6 +738,109 @@ function renderTotals() {
   document.getElementById('total-profit').textContent = money(totalProfit);
   document.getElementById('total-inventory-value').textContent = money(totalInventoryValue);
 }
+
+function renderFunds() {
+  const cashCents = balanceCents('cashCents');
+  const bankCents = balanceCents('bankCents');
+  document.getElementById('cash-balance').textContent = money(cashCents / 100);
+  document.getElementById('bank-balance').textContent = money(bankCents / 100);
+  document.getElementById('opening-balances-card').style.display =
+    STATE.cashBalances?.openingBalancesSet ? 'none' : 'block';
+
+  const tbody = document.querySelector('#deposits-table tbody');
+  tbody.innerHTML = '';
+  document.getElementById('deposits-empty').style.display = STATE.cashTransfers.length ? 'none' : 'block';
+  STATE.cashTransfers.forEach((transfer) => {
+    const tr = document.createElement('tr');
+    const from = transfer.from || 'cash';
+    const to = transfer.to || 'bank';
+    const direction = from === 'cash' && to === 'bank' ? 'Cash → bank' :
+      from === 'bank' && to === 'cash' ? 'Bank → cash' : 'Transfer';
+    tr.innerHTML = `<td>${transfer.timestamp.toLocaleDateString(undefined,{month:'short',day:'numeric'})}<div class="row-sub">${transfer.timestamp.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}</div></td>
+      <td class="mono">${direction}<div class="row-sub">${money(transfer.amount)}</div></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById('opening-submit').addEventListener('click', async () => {
+  const errorEl = document.getElementById('opening-error');
+  errorEl.style.display = 'none';
+  const cash = parseFloat(document.getElementById('opening-cash').value);
+  const bank = parseFloat(document.getElementById('opening-bank').value);
+  if (!validAmount(cash) || !validAmount(bank)) return showErr(errorEl, 'Enter valid non-negative cash and bank amounts.');
+
+  const button = document.getElementById('opening-submit');
+  button.disabled = true;
+  try {
+    const ref = db.collection('cashBank').doc('balances');
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const balances = snap.exists ? snap.data() : {};
+      if (balances.openingBalancesSet) throw new Error('Starting balances have already been saved.');
+      tx.set(ref, {
+        cashCents: Number(balances.cashCents || 0) + toCents(cash),
+        bankCents: Number(balances.bankCents || 0) + toCents(bank),
+        openingBalancesSet: true,
+      }, { merge: true });
+    });
+    document.getElementById('opening-cash').value = '';
+    document.getElementById('opening-bank').value = '';
+    toast('Starting balances saved');
+  } catch (e) {
+    showErr(errorEl, e.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.getElementById('transfer-direction').addEventListener('change', () => {
+  const toBank = document.getElementById('transfer-direction').value === 'toBank';
+  document.querySelector('label[for="deposit-amount"]').textContent = toBank ? 'Amount deposited' : 'Amount withdrawn';
+  document.getElementById('transfer-submit').textContent = toBank ? 'Record deposit' : 'Record withdrawal';
+});
+
+document.getElementById('transfer-submit').addEventListener('click', async () => {
+  const errorEl = document.getElementById('transfer-error');
+  errorEl.style.display = 'none';
+  const amount = parseFloat(document.getElementById('deposit-amount').value);
+  const toBank = document.getElementById('transfer-direction').value === 'toBank';
+  if (!Number.isFinite(amount) || amount <= 0) return showErr(errorEl, 'Enter an amount greater than zero.');
+
+  const button = document.getElementById('transfer-submit');
+  button.disabled = true;
+  try {
+    const amountCents = toCents(amount);
+    if (amountCents <= 0) throw new Error('Enter an amount of at least one cent.');
+    const balancesRef = db.collection('cashBank').doc('balances');
+    const transferRef = db.collection('cashTransfers').doc();
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(balancesRef);
+      const balances = snap.exists ? snap.data() : {};
+      const cashCents = Number(balances.cashCents || 0);
+      const bankCents = Number(balances.bankCents || 0);
+      const availableCents = toBank ? cashCents : bankCents;
+      if (amountCents > availableCents) {
+        throw new Error(`Only ${money(availableCents / 100)} is available in ${toBank ? 'cash' : 'the bank'}.`);
+      }
+      tx.set(balancesRef, {
+        cashCents: cashCents + (toBank ? -amountCents : amountCents),
+        bankCents: bankCents + (toBank ? amountCents : -amountCents),
+      }, { merge: true });
+      tx.set(transferRef, {
+        amount: amountCents / 100,
+        from: toBank ? 'cash' : 'bank',
+        to: toBank ? 'bank' : 'cash',
+        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+    document.getElementById('deposit-amount').value = '';
+    toast(toBank ? 'Deposit recorded' : 'Withdrawal recorded');
+  } catch (e) {
+    showErr(errorEl, e.message);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 function renderChart() {
   if (typeof Chart === 'undefined') {
@@ -672,8 +908,24 @@ function renderSellForm() {
   updateStockHint();
 }
 document.getElementById('sell-product').addEventListener('change', updateStockHint);
-document.getElementById('sell-price').addEventListener('input', updateUnitPriceHint);
+let saleAllocationTouched = false;
+document.getElementById('sell-price').addEventListener('input', () => {
+  updateUnitPriceHint();
+  if (!saleAllocationTouched) {
+    const saleTotal = parseFloat(document.getElementById('sell-price').value);
+    document.getElementById('sell-cash').value = Number.isFinite(saleTotal) && saleTotal >= 0 ? saleTotal.toFixed(2) : '';
+  }
+  updatePaymentHint();
+});
 document.getElementById('sell-qty').addEventListener('input', updateUnitPriceHint);
+document.getElementById('sell-cash').addEventListener('input', () => {
+  saleAllocationTouched = true;
+  updatePaymentHint();
+});
+document.getElementById('sell-bank').addEventListener('input', () => {
+  saleAllocationTouched = true;
+  updatePaymentHint();
+});
 function updateStockHint() {
   const id = document.getElementById('sell-product').value;
   const p = STATE.products.find((x) => x.id === id);
@@ -685,6 +937,16 @@ function updateUnitPriceHint() {
   const unitPrice = saleTotal >= 0 && quantity > 0 ? saleTotal / quantity : 0;
   document.getElementById('sell-unit-price-hint').textContent = `Per-unit sale price: ${money(unitPrice)}`;
 }
+function updatePaymentHint() {
+  const saleTotal = parseFloat(document.getElementById('sell-price').value);
+  const cash = parseFloat(document.getElementById('sell-cash').value);
+  const bank = parseFloat(document.getElementById('sell-bank').value);
+  const matches = Number.isFinite(saleTotal) && Number.isFinite(cash) && Number.isFinite(bank) &&
+    toCents(cash) + toCents(bank) === toCents(saleTotal);
+  const hint = document.getElementById('sell-payment-hint');
+  hint.textContent = matches ? 'Cash and bank amounts match the sale price.' : 'Cash and bank amounts must add up to the total sale price.';
+  hint.style.color = matches ? 'var(--accent)' : 'var(--muted)';
+}
 
 document.getElementById('sell-submit').addEventListener('click', async () => {
   const errEl = document.getElementById('sell-error');
@@ -692,19 +954,29 @@ document.getElementById('sell-submit').addEventListener('click', async () => {
   const productId = document.getElementById('sell-product').value;
   const saleTotal = parseFloat(document.getElementById('sell-price').value);
   const quantity = parseInt(document.getElementById('sell-qty').value, 10);
+  const cashAmount = parseFloat(document.getElementById('sell-cash').value);
+  const bankAmount = parseFloat(document.getElementById('sell-bank').value);
 
   if (!productId) return showErr(errEl, 'Add a product first (Restock tab).');
   if (isNaN(saleTotal) || saleTotal < 0) return showErr(errEl, 'Enter a valid total sale price.');
   if (isNaN(quantity) || quantity <= 0) return showErr(errEl, 'Enter a valid quantity.');
+  if (!validAmount(cashAmount) || !validAmount(bankAmount) ||
+      toCents(cashAmount) + toCents(bankAmount) !== toCents(saleTotal)) {
+    return showErr(errEl, 'Cash and bank amounts must be valid and add up to the total sale price.');
+  }
 
   const btn = document.getElementById('sell-submit');
   btn.disabled = true;
   try {
-    await recordSale(productId, saleTotal, quantity);
+    await recordSale(productId, saleTotal, quantity, cashAmount, bankAmount);
     toast('Sale recorded');
     document.getElementById('sell-price').value = '';
     document.getElementById('sell-qty').value = '';
+    document.getElementById('sell-cash').value = '';
+    document.getElementById('sell-bank').value = '0';
+    saleAllocationTouched = false;
     updateUnitPriceHint();
+    updatePaymentHint();
   } catch (e) {
     showErr(errEl, e.message);
   } finally {
@@ -714,21 +986,32 @@ document.getElementById('sell-submit').addEventListener('click', async () => {
 
 // Firestore transaction: re-checks stock at write time, so two people
 // selling the last units at once can't both succeed.
-function recordSale(productId, saleTotal, quantity) {
+function recordSale(productId, saleTotal, quantity, cashAmount, bankAmount) {
   const productRef = db.collection('products').doc(productId);
+  const balancesRef = db.collection('cashBank').doc('balances');
   const saleRef = db.collection('sales').doc();
+  const cashCents = toCents(cashAmount);
+  const bankCents = toCents(bankAmount);
+  const saleTotalCents = toCents(saleTotal);
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(productRef);
+    const balancesSnap = await tx.get(balancesRef);
     if (!snap.exists) throw new Error('Product not found');
     const product = snap.data();
     if (quantity > product.quantity) throw new Error(`Only ${product.quantity} unit(s) of "${product.name}" in stock`);
-    const salePrice = saleTotal / quantity;
-    const revenue = saleTotal;
+    const salePrice = (saleTotalCents / 100) / quantity;
+    const revenue = saleTotalCents / 100;
     const profit = (salePrice - product.cost) * quantity;
+    const balances = balancesSnap.exists ? balancesSnap.data() : {};
     tx.update(productRef, { quantity: product.quantity - quantity });
+    tx.set(balancesRef, {
+      cashCents: Number(balances.cashCents || 0) + cashCents,
+      bankCents: Number(balances.bankCents || 0) + bankCents,
+    }, { merge: true });
     tx.set(saleRef, {
-      productId, productName: product.name, salePrice, saleTotal, costPerUnit: product.cost,
-      quantity, revenue, profit, timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+      productId, productName: product.name, salePrice, saleTotal: revenue, costPerUnit: product.cost,
+      quantity, revenue, profit, cashAmount: cashCents / 100, bankAmount: bankCents / 100,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp(),
     });
   });
 }
@@ -849,7 +1132,7 @@ function renderHistory() {
     tr.innerHTML = `<td>${dt.toLocaleDateString(undefined,{month:'short',day:'numeric'})}<div class="row-sub">${dt.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}</div></td>
       <td>${escapeHtml(s.productName)}</td>
       <td class="mono">${s.quantity}</td>
-      <td class="mono">${money(s.revenue)}</td>
+      <td class="mono">${money(s.revenue)}<div class="row-sub">${salePaymentSummary(s)}</div></td>
       <td class="mono">${money(s.profit)}</td>
       <td><div class="actions"><button class="action-btn" type="button">Edit</button><button class="action-btn delete" type="button">Delete</button></div></td>`;
     tr.querySelector('.action-btn').addEventListener('click', () => openEditSale(s));
@@ -858,16 +1141,28 @@ function renderHistory() {
   });
 }
 
+function salePaymentSummary(sale) {
+  if (sale.cashAmount == null || sale.bankAmount == null) return 'Not tracked';
+  return `Cash ${money(sale.cashAmount)} · Bank ${money(sale.bankAmount)}`;
+}
+
 let editingSaleId = null;
+let editingSaleTracked = false;
 const editSaleDialog = document.getElementById('edit-sale-dialog');
 
 function openEditSale(sale) {
   editingSaleId = sale.id;
+  editingSaleTracked = sale.cashAmount != null && sale.bankAmount != null;
   document.getElementById('edit-sale-product').textContent = sale.productName;
   document.getElementById('edit-sale-price').value = sale.saleTotal ?? sale.revenue;
   document.getElementById('edit-sale-qty').value = sale.quantity;
+  document.getElementById('edit-sale-cash').value = editingSaleTracked ? sale.cashAmount : '';
+  document.getElementById('edit-sale-bank').value = editingSaleTracked ? sale.bankAmount : '';
+  document.getElementById('edit-sale-payment-fields').style.display = editingSaleTracked ? 'block' : 'none';
+  document.getElementById('edit-sale-untracked').style.display = editingSaleTracked ? 'none' : 'block';
   document.getElementById('edit-sale-error').style.display = 'none';
   updateEditSaleUnitPrice();
+  updateEditSalePaymentHint();
   editSaleDialog.showModal();
 }
 
@@ -880,20 +1175,42 @@ function updateEditSaleUnitPrice() {
 
 document.getElementById('edit-sale-price').addEventListener('input', updateEditSaleUnitPrice);
 document.getElementById('edit-sale-qty').addEventListener('input', updateEditSaleUnitPrice);
+document.getElementById('edit-sale-cash').addEventListener('input', updateEditSalePaymentHint);
+document.getElementById('edit-sale-bank').addEventListener('input', updateEditSalePaymentHint);
+document.getElementById('edit-sale-price').addEventListener('input', updateEditSalePaymentHint);
 document.getElementById('edit-sale-cancel').addEventListener('click', () => editSaleDialog.close());
+
+function updateEditSalePaymentHint() {
+  if (!editingSaleTracked) return;
+  const saleTotal = parseFloat(document.getElementById('edit-sale-price').value);
+  const cash = parseFloat(document.getElementById('edit-sale-cash').value);
+  const bank = parseFloat(document.getElementById('edit-sale-bank').value);
+  const matches = Number.isFinite(saleTotal) && Number.isFinite(cash) && Number.isFinite(bank) &&
+    toCents(cash) + toCents(bank) === toCents(saleTotal);
+  const hint = document.getElementById('edit-sale-payment-hint');
+  hint.textContent = matches ? 'Cash and bank amounts match the sale price.' : 'Cash and bank amounts must add up to the total sale price.';
+  hint.style.color = matches ? 'var(--accent)' : 'var(--muted)';
+}
+
 document.getElementById('edit-sale-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const errorEl = document.getElementById('edit-sale-error');
   errorEl.style.display = 'none';
   const saleTotal = parseFloat(document.getElementById('edit-sale-price').value);
   const quantity = parseInt(document.getElementById('edit-sale-qty').value, 10);
+  const cashAmount = editingSaleTracked ? parseFloat(document.getElementById('edit-sale-cash').value) : null;
+  const bankAmount = editingSaleTracked ? parseFloat(document.getElementById('edit-sale-bank').value) : null;
   if (isNaN(saleTotal) || saleTotal < 0) return showErr(errorEl, 'Enter a valid total sale price.');
   if (isNaN(quantity) || quantity <= 0) return showErr(errorEl, 'Enter a valid quantity.');
+  if (editingSaleTracked && (!validAmount(cashAmount) || !validAmount(bankAmount) ||
+      toCents(cashAmount) + toCents(bankAmount) !== toCents(saleTotal))) {
+    return showErr(errorEl, 'Cash and bank amounts must be valid and add up to the total sale price.');
+  }
 
   const submit = event.currentTarget.querySelector('button[type="submit"]');
   submit.disabled = true;
   try {
-    await updateSale(editingSaleId, saleTotal, quantity);
+    await updateSale(editingSaleId, saleTotal, quantity, cashAmount, bankAmount);
     editSaleDialog.close();
     toast('Sale updated');
   } catch (e) {
@@ -903,10 +1220,12 @@ document.getElementById('edit-sale-form').addEventListener('submit', async (even
   }
 });
 
-function updateSale(saleId, saleTotal, quantity) {
+function updateSale(saleId, saleTotal, quantity, cashAmount, bankAmount) {
   const saleRef = db.collection('sales').doc(saleId);
+  const balancesRef = db.collection('cashBank').doc('balances');
   return db.runTransaction(async (tx) => {
     const saleSnap = await tx.get(saleRef);
+    const balancesSnap = await tx.get(balancesRef);
     if (!saleSnap.exists) throw new Error('Sale not found');
     const sale = saleSnap.data();
     const productRef = db.collection('products').doc(sale.productId);
@@ -915,11 +1234,28 @@ function updateSale(saleId, saleTotal, quantity) {
     const product = productSnap.data();
     const availableQuantity = product.quantity + sale.quantity;
     if (quantity > availableQuantity) throw new Error(`Only ${availableQuantity} unit(s) available for this sale`);
-    const salePrice = saleTotal / quantity;
-    const revenue = saleTotal;
+    const saleTotalCents = toCents(saleTotal);
+    const salePrice = (saleTotalCents / 100) / quantity;
+    const revenue = saleTotalCents / 100;
     const profit = (salePrice - product.cost) * quantity;
+    const tracked = sale.cashAmount != null && sale.bankAmount != null;
+    if (tracked) {
+      const balances = balancesSnap.exists ? balancesSnap.data() : {};
+      const nextCashAmount = cashAmount == null ? revenue : cashAmount;
+      const nextBankAmount = bankAmount == null ? 0 : bankAmount;
+      const nextCash = Number(balances.cashCents || 0) + toCents(nextCashAmount) - toCents(sale.cashAmount);
+      const nextBank = Number(balances.bankCents || 0) + toCents(nextBankAmount) - toCents(sale.bankAmount);
+      if (nextCash < 0 || nextBank < 0) {
+        throw new Error('The sale cannot be changed because some of its cash or bank proceeds have already been spent or transferred.');
+      }
+      tx.set(balancesRef, { cashCents: nextCash, bankCents: nextBank }, { merge: true });
+    }
     tx.update(productRef, { quantity: availableQuantity - quantity });
-    tx.update(saleRef, { salePrice, saleTotal, quantity, revenue, profit, costPerUnit: product.cost });
+    tx.update(saleRef, { salePrice, saleTotal: revenue, quantity, revenue, profit, costPerUnit: product.cost,
+      ...(tracked ? {
+        cashAmount: (cashAmount == null ? revenue : toCents(cashAmount) / 100),
+        bankAmount: (bankAmount == null ? 0 : toCents(bankAmount) / 100),
+      } : {}) });
   });
 }
 
@@ -928,12 +1264,24 @@ async function deleteSale(sale) {
   try {
     const saleRef = db.collection('sales').doc(sale.id);
     const productRef = db.collection('products').doc(sale.productId);
+    const balancesRef = db.collection('cashBank').doc('balances');
     await db.runTransaction(async (tx) => {
       const saleSnap = await tx.get(saleRef);
+      const balancesSnap = await tx.get(balancesRef);
       if (!saleSnap.exists) throw new Error('Sale not found');
       const productSnap = await tx.get(productRef);
       if (!productSnap.exists) throw new Error('Product not found');
-      tx.update(productRef, { quantity: productSnap.data().quantity + saleSnap.data().quantity });
+      const saleData = saleSnap.data();
+      if (saleData.cashAmount != null && saleData.bankAmount != null) {
+        const balances = balancesSnap.exists ? balancesSnap.data() : {};
+        const nextCash = Number(balances.cashCents || 0) - toCents(saleData.cashAmount);
+        const nextBank = Number(balances.bankCents || 0) - toCents(saleData.bankAmount);
+        if (nextCash < 0 || nextBank < 0) {
+          throw new Error('This sale cannot be deleted because some of its cash or bank proceeds have already been spent or transferred.');
+        }
+        tx.set(balancesRef, { cashCents: nextCash, bankCents: nextBank }, { merge: true });
+      }
+      tx.update(productRef, { quantity: productSnap.data().quantity + saleData.quantity });
       tx.delete(saleRef);
     });
     toast('Sale deleted');
@@ -944,7 +1292,7 @@ async function deleteSale(sale) {
 
 document.getElementById('export-csv').addEventListener('click', () => {
   if (!STATE.sales.length) return toast('No sales to export', true);
-  const header = ['Date', 'Product', 'Total Sale Price', 'Sale Price Per Unit', 'Cost Per Unit', 'Quantity', 'Revenue', 'Profit'];
+  const header = ['Date', 'Product', 'Total Sale Price', 'Sale Price Per Unit', 'Cost Per Unit', 'Quantity', 'Cash Received', 'Bank Received', 'Revenue', 'Profit'];
   const rows = STATE.sales.map((s) => [
     s.timestamp.toISOString(),
     s.productName,
@@ -952,6 +1300,8 @@ document.getElementById('export-csv').addEventListener('click', () => {
     s.salePrice,
     s.costPerUnit,
     s.quantity,
+    s.cashAmount ?? '',
+    s.bankAmount ?? '',
     s.revenue.toFixed(2),
     s.profit.toFixed(2),
   ]);
