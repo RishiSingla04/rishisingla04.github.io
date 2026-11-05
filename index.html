@@ -288,6 +288,35 @@
           </div>
         </div>
       </div>
+      <div class="card">
+        <h3 style="margin-top:0;">Product breakdown</h3>
+        <label class="label" for="product-filter">Filter by product</label>
+        <select id="product-filter">
+          <option value="all">All products</option>
+        </select>
+        <div class="stat-grid" id="product-metrics">
+          <div class="stat-box">
+            <span class="label">Total cost</span>
+            <div class="value mono" id="product-total-cost">$0.00</div>
+          </div>
+          <div class="stat-box">
+            <span class="label">COGS</span>
+            <div class="value mono" id="product-cogs">$0.00</div>
+          </div>
+          <div class="stat-box">
+            <span class="label">Inventory on hand</span>
+            <div class="value mono" id="product-inventory-quantity">0</div>
+            <div class="row-sub" id="product-inventory-value">$0.00 value</div>
+          </div>
+          <div class="stat-box">
+            <span class="label">Total revenue</span>
+            <div class="value mono" id="product-revenue">$0.00</div>
+          </div>
+        </div>
+        <div class="empty" id="product-filter-empty" style="display:none;">
+          <div class="glyph">📊</div>No product data yet.
+        </div>
+      </div>
     </section>
 
     <!-- Sell -->
@@ -569,8 +598,10 @@ document.querySelectorAll('nav.tabbar button').forEach((btn) => {
     if (btn.dataset.view === 'sell') renderSellForm();
     if (btn.dataset.view === 'restock') renderRestockList();
     if (btn.dataset.view === 'funds') renderFunds();
+    if (btn.dataset.view === 'totals') renderTotals();
   });
 });
+document.getElementById('product-filter').addEventListener('change', renderTotals);
 document.getElementById('view-dashboard').classList.add('active');
 
 /* ================= Live data (Firestore snapshots) ================= */
@@ -585,6 +616,7 @@ function startListening() {
     STATE.products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     console.debug('products onSnapshot ->', STATE.products.map(p => ({id: p.id, name: p.name, quantity: p.quantity}))); 
     renderDashboard();
+    renderTotals();
     renderSellForm();
     renderRestockList();
   }, (err) => toast(err.message, true));
@@ -730,6 +762,44 @@ function renderTotals() {
     const missingHistoricalCost = Math.max(0, historicalCost - recordedCost);
     return total + recordedCost + missingHistoricalCost;
   }, 0);
+  const productMetrics = new Map(STATE.products.map((product) => [product.id, {
+    id: product.id,
+    name: product.name,
+    totalCost: 0,
+    cogs: 0,
+    inventoryQuantity: Number(product.quantity || 0),
+    inventoryValue: Number(product.cost || 0) * Number(product.quantity || 0),
+    revenue: 0,
+  }]));
+  const salesByProduct = new Map();
+  STATE.sales.forEach((sale) => {
+    const matchingProduct = STATE.products.find((product) =>
+      (sale.productId && product.id === sale.productId) ||
+      (!sale.productId && product.name === sale.productName)
+    );
+    const productId = sale.productId || matchingProduct?.id || `name:${sale.productName || 'unknown'}`;
+    const metrics = productMetrics.get(productId) || {
+      id: productId,
+      name: sale.productName || 'Unknown product',
+      totalCost: 0,
+      cogs: 0,
+      inventoryQuantity: 0,
+      inventoryValue: 0,
+      revenue: 0,
+    };
+    metrics.cogs += Number(sale.costPerUnit || 0) * Number(sale.quantity || 0);
+    metrics.revenue += Number(sale.revenue || sale.saleTotal || 0);
+    productMetrics.set(productId, metrics);
+    salesByProduct.set(productId, (salesByProduct.get(productId) || 0) + Number(sale.quantity || 0));
+  });
+  productMetrics.forEach((metrics, productId) => {
+    const product = STATE.products.find((item) => item.id === productId);
+    if (!product) return;
+    const recordedCost = recordedCostByProduct[productId] || 0;
+    const purchasedQuantity = Number(product.quantity || 0) + (salesByProduct.get(productId) || 0);
+    const historicalCost = Number(product.cost || 0) * purchasedQuantity;
+    metrics.totalCost = recordedCost + Math.max(0, historicalCost - recordedCost);
+  });
   document.getElementById('total-units-sold').textContent = totalUnitsSold;
   document.getElementById('total-units-left').textContent = totalUnitsLeft;
   document.getElementById('total-revenue').textContent = money(totalRevenue);
@@ -737,6 +807,38 @@ function renderTotals() {
   document.getElementById('total-inventory-sold').textContent = money(totalInventorySold);
   document.getElementById('total-profit').textContent = money(totalProfit);
   document.getElementById('total-inventory-value').textContent = money(totalInventoryValue);
+
+  const productSelect = document.getElementById('product-filter');
+  const selectedProductId = productSelect.value || 'all';
+  const sortedProducts = [...productMetrics.values()].sort((a, b) => a.name.localeCompare(b.name));
+  productSelect.innerHTML = '<option value="all">All products</option>' +
+    sortedProducts.map((product) =>
+      `<option value="${escapeAttr(product.id)}">${escapeHtml(product.name)}</option>`
+    ).join('');
+  productSelect.value = productMetrics.has(selectedProductId) ? selectedProductId : 'all';
+  productSelect.disabled = sortedProducts.length === 0;
+  document.getElementById('product-metrics').style.display = sortedProducts.length ? 'grid' : 'none';
+  document.getElementById('product-filter-empty').style.display = sortedProducts.length ? 'none' : 'block';
+  renderProductMetrics(productMetrics);
+}
+
+function renderProductMetrics(productMetrics) {
+  const selectedId = document.getElementById('product-filter').value || 'all';
+  const metrics = selectedId === 'all'
+    ? [...productMetrics.values()].reduce((total, product) => ({
+      totalCost: total.totalCost + product.totalCost,
+      cogs: total.cogs + product.cogs,
+      inventoryQuantity: total.inventoryQuantity + product.inventoryQuantity,
+      inventoryValue: total.inventoryValue + product.inventoryValue,
+      revenue: total.revenue + product.revenue,
+    }), { totalCost: 0, cogs: 0, inventoryQuantity: 0, inventoryValue: 0, revenue: 0 })
+    : productMetrics.get(selectedId);
+  if (!metrics) return;
+  document.getElementById('product-total-cost').textContent = money(metrics.totalCost);
+  document.getElementById('product-cogs').textContent = money(metrics.cogs);
+  document.getElementById('product-inventory-quantity').textContent = metrics.inventoryQuantity;
+  document.getElementById('product-inventory-value').textContent = `${money(metrics.inventoryValue)} value`;
+  document.getElementById('product-revenue').textContent = money(metrics.revenue);
 }
 
 function renderFunds() {
